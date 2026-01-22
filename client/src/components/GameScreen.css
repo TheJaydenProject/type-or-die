@@ -1,0 +1,399 @@
+/* ============================================
+   ANIMATIONS (TOP FOR PRIORITY)
+   ============================================ */
+
+.terminal.flash {
+  animation: brutal-flash 0.4s ease-out forwards !important;
+}
+
+@keyframes brutal-flash {
+  0% { background-color: #ff0000; }
+  100% { background-color: #000000; }
+}
+
+@keyframes pulse-critical {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes blink-border {
+  0%, 49% { border-bottom-color: #ff0000; }
+  50%, 100% { border-bottom-color: transparent; }
+}
+
+@keyframes strike-flash {
+  0% {
+    color: #ff0000;
+    transform: scale(1);
+  }
+  50% {
+    color: #ff6666;
+    transform: scale(1.3);
+  }
+  100% {
+    color: #ff0000;
+    transform: scale(1);
+  }
+}
+
+@keyframes mega-flash {
+  0%, 100% {
+    color: #ff0000;
+    transform: scale(1);
+    text-shadow: 0 0 10px #ff0000;
+  }
+  50% {
+    color: #fff;
+    transform: scale(2);
+    text-shadow: 0 0 30px #ff0000, 0 0 60px #ff0000;
+  }
+}
+
+/* ============================================
+   BASE LAYOUT
+   ============================================ */
+
+.terminal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: #000;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: background-color 0.2s;
+}
+
+.terminal-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  overflow: hidden;
+}
+
+/* ============================================
+   ROULETTE OVERLAY
+   ============================================ */
+
+.roulette-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.9);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  text-align: center;
+}
+
+.roulette-result {
+  font-size: 3rem;
+  letter-spacing: 4px;
+  font-weight: bold;
+}
+
+.roulette-odds {
+  font-size: 1.5rem;
+  margin-top: 2rem;
+  color: #888;
+  letter-spacing: 2px;
+}
+
+/* ============================================
+   HEADER
+   ============================================ */
+
+.terminal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 2rem;
+  border-bottom: 1px solid #222;
+}
+
+.term-label {
+  font-size: 0.85rem;
+  letter-spacing: 2px;
+  color: #555;
+}
+
+.term-timer {
+  font-size: 1.8rem;
+  letter-spacing: 3px;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.term-timer.critical {
+  color: #ff0000;
+  animation: pulse-critical 0.5s infinite;
+}
+
+.strikes-container {
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+}
+
+.strike-box {
+  font-size: 2rem;
+  color: #666;
+  font-weight: bold;
+  transition: all 0.2s;
+}
+
+.strike-box.crossed {
+  color: #ff0000;
+  animation: strike-flash 0.5s ease-out;
+  text-shadow: 0 0 10px #ff0000;
+}
+
+.strike-box.flash-strike {
+  animation: mega-flash 0.3s ease-out;
+}
+
+.term-btn {
+  padding: 0.5rem 1.5rem;
+  background: transparent;
+  border: 1px solid #444;
+  color: #888;
+  font-size: 0.8rem;
+  letter-spacing: 2px;
+  cursor: crosshair;
+  transition: all 0.1s;
+}
+
+.term-btn:hover {
+  border-color: #ff0000;
+  color: #ff0000;
+}
+
+/* ============================================
+   TYPING ZONE
+   ============================================ */
+
+.typing-zone {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 2rem;
+  border-right: 1px solid #222;
+}
+
+.death-screen {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.9);
+  border: 3px solid #ff0000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 100;
+}
+
+.death-text {
+  text-align: center;
+  font-size: 2.5rem;
+  letter-spacing: 6px;
+  color: #ff0000;
+  line-height: 1.8;
+  text-transform: uppercase;
+}
+
+.death-sub {
+  font-size: 1rem;
+  color: #666;
+  margin-top: 1rem;
+}
+
+.scrolling-sentences {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  align-items: center;
+  max-width: 90%;
+  padding: 2rem 0;
+}
+
+.sentence-row {
+  font-size: 2rem;
+  line-height: 1.5;
+  letter-spacing: 2px;
+  text-align: center;
+  white-space: pre-wrap;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  transition: all 0.3s ease;
+}
+
+.sentence-prev,
+.sentence-next {
+  color: #666;
+  font-size: 1.4rem;
+  opacity: 0.6;
+}
+
+.sentence-current {
+  color: #fff;
+  font-size: 2.5rem;
+}
+
+.char-done {
+  color: #ff0000;
+  position: relative;
+}
+
+.char-pending {
+  color: #555;
+  position: relative;
+}
+
+.char-pending.char-current {
+  border-bottom: 3px solid #ff0000;
+  animation: blink-border 0.7s infinite;
+}
+
+.cursor-blink {
+  display: none;
+}
+
+.typing-status {
+  margin-top: 3rem;
+  font-size: 0.85rem;
+  letter-spacing: 3px;
+  color: #444;
+  text-transform: uppercase;
+}
+
+/* ============================================
+   LEADERBOARD ZONE
+   ============================================ */
+
+.leaderboard-zone {
+  display: flex;
+  flex-direction: column;
+  padding: 2rem;
+  overflow: hidden;
+}
+
+.lb-header {
+  font-size: 0.9rem;
+  letter-spacing: 3px;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #222;
+  margin-bottom: 1rem;
+  color: #666;
+  text-transform: uppercase;
+}
+
+.lb-list {
+  flex: 1;
+  overflow-y: auto;
+  margin-bottom: 2rem;
+}
+
+.lb-list::-webkit-scrollbar {
+  width: 3px;
+}
+
+.lb-list::-webkit-scrollbar-track {
+  background: #000;
+}
+
+.lb-list::-webkit-scrollbar-thumb {
+  background: #222;
+}
+
+.lb-list::-webkit-scrollbar-thumb:hover {
+  background: #333;
+}
+
+.lb-entry {
+  padding: 1rem;
+  border: 1px solid #1a1a1a;
+  margin-bottom: 0.5rem;
+  background: rgba(0, 0, 0, 0.5);
+  transition: border-color 0.1s;
+}
+
+.lb-entry:hover {
+  border-color: #333;
+}
+
+.lb-you {
+  border-color: #ff0000;
+}
+
+.lb-dead {
+  opacity: 0.3;
+  border-color: #111;
+}
+
+.lb-rank {
+  font-size: 0.85rem;
+  letter-spacing: 2px;
+  margin-bottom: 0.5rem;
+  color: #888;
+}
+
+.lb-bar {
+  height: 3px;
+  background: #111;
+  margin-bottom: 0.5rem;
+  position: relative;
+}
+
+.lb-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background: #ff0000;
+  transition: width 0.2s;
+}
+
+.lb-stats {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  color: #666;
+  letter-spacing: 1px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================
+   STATS PANEL
+   ============================================ */
+
+.stats-panel {
+  border-top: 1px solid #222;
+  padding-top: 1rem;
+}
+
+.stats-header {
+  font-size: 0.85rem;
+  letter-spacing: 2px;
+  margin-bottom: 0.5rem;
+  color: #555;
+  text-transform: uppercase;
+}
+
+.stats-line {
+  font-size: 0.8rem;
+  letter-spacing: 2px;
+  margin-bottom: 0.3rem;
+  color: #aaa;
+  font-variant-numeric: tabular-nums;
+}

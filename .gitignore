@@ -1,0 +1,46 @@
+# Dependency Directories
+node_modules/
+**/node_modules/
+
+# Build Outputs
+dist/
+**/dist/
+.cache/
+
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+*.pem
+
+# Configs
+configs/*.json
+!configs/default.json
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Docker & Persistence
+postgres-data/
+redis-data/
+.docker-data/
+
+# OS Specific
+.DS_Store
+Thumbs.db
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project Specific Artifacts
+init-sentences-db.sql
+repomix-output.xml
+.vite/
+.eslintcache
+coverage/
