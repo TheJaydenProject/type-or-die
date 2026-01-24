@@ -146,7 +146,7 @@ function setupSocketHandlers(io) {
           return callback({ success: false, error: 'Only host can change settings' });
         }
 
-        if (sentenceCount < 10 || sentenceCount > 100 || sentenceCount % 10 !== 0) {
+        if (sentenceCount < 5 || sentenceCount > 100 || sentenceCount % 5 !== 0) {
           return callback({ success: false, error: 'Invalid sentence count' });
         }
 

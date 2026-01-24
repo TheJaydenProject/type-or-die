@@ -2,6 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import './GameScreen.css';
 import './RouletteRevolver.css';
 import GameEndScreen from './GameEndScreen';
+import GameController from './game/GameController';
+import TypingField from './game/TypingField';
+import StatusHUD from './game/StatusHUD';
+import LeaderboardPanel from './game/LeaderboardPanel';
 
 function RouletteRevolver({ survived, previousOdds, newOdds, roll }) {
   const [phase, setPhase] = useState('spinning');
@@ -132,14 +136,6 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
   const currentWord = words[currentWordIndex] || '';
   const currentPlayer = players[playerId] || {};
 
-  const calculateGlobalCharIndex = () => {
-    let index = 0;
-    for (let i = 0; i < currentWordIndex; i++) {
-      index += words[i].length + 1;
-    }
-    return index + currentCharInWord;
-  };
-
   useEffect(() => {
     if (status !== 'ALIVE') return;
 
@@ -166,8 +162,14 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
       e.preventDefault();
       const key = e.key;
 
+      if (GameController.isNavigationKey(key) && key !== ' ') return;
+
+      const words = currentSentence.split(' ');
+      const currentWord = words[currentWordIndex] || '';
+      const charIndex = GameController.calculateGlobalCharIndex(words, currentWordIndex, currentCharInWord);
+
       if (key === ' ') {
-        if (currentCharInWord === currentWord.length) {
+        if (GameController.shouldAdvanceWord(currentCharInWord, currentWord)) {
           if (currentWordIndex < words.length - 1) {
             setCurrentWordIndex(prev => prev + 1);
             setCurrentCharInWord(0);
@@ -175,7 +177,7 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
             socket.emit('char_typed', {
               roomCode: room.roomCode,
               char: ' ',
-              charIndex: calculateGlobalCharIndex(),
+              charIndex: charIndex,
               timestamp: Date.now()
             });
           }
@@ -185,7 +187,7 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
             roomCode: room.roomCode,
             expectedChar: currentWord[currentCharInWord],
             typedChar: key,
-            charIndex: calculateGlobalCharIndex(),
+            charIndex: charIndex,
             sentenceIndex: currentSentenceIndex
           });
           setCurrentWordIndex(0);
@@ -194,22 +196,20 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
         return;
       }
 
-      if (key.length > 1) return;
-
       const expectedChar = currentWord[currentCharInWord];
 
-      if (key === expectedChar) {
+      if (GameController.validateChar(key, expectedChar)) {
         const newCharInWord = currentCharInWord + 1;
         setCurrentCharInWord(newCharInWord);
 
         socket.emit('char_typed', {
           roomCode: room.roomCode,
           char: key,
-          charIndex: calculateGlobalCharIndex(),
+          charIndex: charIndex,
           timestamp: Date.now()
         });
 
-        if (newCharInWord === currentWord.length && currentWordIndex === words.length - 1) {
+        if (GameController.shouldCompleteSentence(currentWordIndex, words, newCharInWord, currentWord)) {
           setTimeout(() => {
             const nextIndex = currentSentenceIndex + 1;
             if (nextIndex < sentences.length) {
@@ -228,7 +228,7 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
           roomCode: room.roomCode,
           expectedChar: expectedChar,
           typedChar: key,
-          charIndex: calculateGlobalCharIndex(),
+          charIndex: charIndex,
           sentenceIndex: currentSentenceIndex
         });
         setCurrentWordIndex(0);
@@ -412,116 +412,27 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
             </div>
           )}
 
-          <div className="game-status-bar">
-            <div className="strikes-container">
-              {[0, 1, 2].map(i => (
-                <span 
-                  key={i} 
-                  className={`strike-box ${i < (currentPlayer.mistakeStrikes || 0) ? 'crossed' : ''} ${mistypeFlash && i === (currentPlayer.mistakeStrikes || 0) - 1 ? 'flash-strike' : ''}`}
-                >
-                  {i < (currentPlayer.mistakeStrikes || 0) ? '☒' : '☐'}
-                </span>
-              ))}
-            </div>
-            
-            <span className="term-label">SENTENCE {currentSentenceIndex + 1}/{sentences.length}</span>
-            
-            <span className={`term-timer ${remainingTime < 5 ? 'critical' : ''}`}>
-              {remainingTime.toFixed(1)}S
-            </span>
-          </div>
+          <StatusHUD
+            remainingTime={remainingTime}
+            mistakeStrikes={currentPlayer.mistakeStrikes || 0}
+            currentSentenceIndex={currentSentenceIndex}
+            totalSentences={sentences.length}
+            mistypeFlash={mistypeFlash}
+          />
 
-          <div className="scrolling-sentences">
-            {currentSentenceIndex > 0 && (
-              <div className="sentence-row sentence-prev">
-                {sentences[currentSentenceIndex - 1]}
-              </div>
-            )}
-            
-            <div className="sentence-row sentence-current">
-              <div className="words-container">
-                {words.map((word, wordIdx) => (
-                  <React.Fragment key={wordIdx}>
-                    <span className="word">
-                      {word.split('').map((char, charIdx) => {
-                        let className = 'char-pending';
-                        
-                        if (wordIdx < currentWordIndex) {
-                          className = 'char-done';
-                        } else if (wordIdx === currentWordIndex) {
-                          if (charIdx < currentCharInWord) {
-                            className = 'char-done';
-                          } else if (charIdx === currentCharInWord) {
-                            className = 'char-current';
-                          }
-                        }
-                        
-                        return (
-                          <span key={charIdx} className={className}>
-                            {char}
-                          </span>
-                        );
-                      })}
-                      {wordIdx === currentWordIndex && currentCharInWord === currentWord.length && (
-                        <span className="char-current-after"></span>
-                      )}
-                    </span>
-                    {wordIdx < words.length - 1 && (
-                      <span className={`space-char ${wordIdx < currentWordIndex ? 'char-done' : 'char-pending'}`}>
-                        {' '}
-                      </span>
-                    )}
-                  </React.Fragment>
-                ))}
-              </div>
-            </div>
-            
-            {currentSentenceIndex < sentences.length - 1 && (
-              <div className="sentence-row sentence-next">
-                {sentences[currentSentenceIndex + 1]}
-              </div>
-            )}
-          </div>
+          <TypingField
+            sentences={sentences}
+            currentSentenceIndex={currentSentenceIndex}
+            currentWordIndex={currentWordIndex}
+            currentCharInWord={currentCharInWord}
+          />
         </div>
 
-        <div className="leaderboard-zone">
-          <div className="lb-header">LIVE LEADERBOARD</div>
-          <div className="lb-list">
-            {sortedPlayers.map((player, idx) => (
-              <div
-                key={player.id}
-                className={`lb-entry ${player.status === 'DEAD' ? 'lb-dead' : ''} ${player.id === playerId ? 'lb-you' : ''}`}
-              >
-                <div className="lb-rank">
-                  {idx + 1}. {player.id === playerId ? '[YOU] ' : ''}{player.nickname}
-                  {player.status === 'DEAD' && ' [X]'}
-                </div>
-                <div className="lb-bar">
-                  <div 
-                    className="lb-fill" 
-                    style={{ width: `${(player.completedSentences / sentences.length) * 100}%` }}
-                  />
-                </div>
-                <div className="lb-stats">
-                  <span>{player.completedSentences}/{sentences.length}</span>
-                  <span>{player.status === 'ALIVE' ? `1/${player.rouletteOdds}` : '--'}</span>
-                  <span>WPM {player.averageWPM || 0}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="stats-panel">
-            <div className="stats-header">YOUR DATA</div>
-            <div className="stats-line">
-              ACC: {currentPlayer.totalTypedChars > 0 
-                ? ((currentPlayer.totalCorrectChars / currentPlayer.totalTypedChars) * 100).toFixed(1) 
-                : 100}%
-            </div>
-            <div className="stats-line">HIT: {currentPlayer.totalCorrectChars || 0}</div>
-            <div className="stats-line">ERR: {currentPlayer.totalMistypes || 0}</div>
-          </div>
-        </div>
+        <LeaderboardPanel
+          players={players}
+          playerId={playerId}
+          totalSentences={sentences.length}
+        />
       </div>
     </div>
   );
