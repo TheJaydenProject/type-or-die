@@ -19,9 +19,8 @@
 }
 
 @keyframes cursor-blink {
-  0% { opacity: 1; }
-  50% { opacity: 0; }
-  100% { opacity: 1; }
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
 }
 
 @keyframes strike-flash {
@@ -55,11 +54,11 @@
 @keyframes victoryPulse {
   0%, 100% { 
     border-color: #0f0;
-    box-shadow: inset 0 0 50px rgba(0, 255, 0, 0.1);
+    background-color: rgba(0, 255, 0, 0.03);
   }
   50% { 
-    border-color: #0f0;
-    box-shadow: inset 0 0 80px rgba(0, 255, 0, 0.2);
+    border-color: #00ff00;
+    background-color: rgba(0, 255, 0, 0.08);
   }
 }
 
@@ -78,11 +77,10 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: background-color 0.2s;
 }
 
 .terminal.flash {
-  animation: brutal-flash 0.4s ease-out forwards !important;
+  animation: brutal-flash 0.4s ease-out;
 }
 
 .terminal-body {
@@ -264,6 +262,7 @@
   width: 90%;
   max-width: 900px;
   padding: 2rem 0;
+  text-align: center;
 }
 
 .sentence-row {
@@ -288,40 +287,46 @@
   font-weight: 500;
 }
 
+.words-container {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0;
+  line-height: 1.5;
+}
+
+.word {
+  display: inline-flex;
+}
+
+.space-char {
+  white-space: pre;
+}
+
 .char-done {
   color: var(--accent-red);
   text-shadow: 0 0 8px rgba(255, 0, 0, 0.5);
+  position: relative;
 }
 
 .char-pending {
   color: #555;
 }
 
-.char-pending,
-.char-done {
+.char-current {
   position: relative;
-  min-width: 1ch;
 }
 
-.char-pending.char-current::before {
+.char-current::after {
   content: '';
   position: absolute;
-  left: -2px;
-  top: 15%;
-  bottom: 15%;
-  width: 4px;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 3px;
   background-color: var(--accent-red);
-  animation: cursor-blink 1s infinite;
-  z-index: 10;
-}
-
-.typing-status {
-  margin-top: 4rem;
-  font-size: 1.2rem;
-  letter-spacing: 4px;
-  color: #555;
-  text-transform: uppercase;
-  font-weight: bold;
+  animation: cursor-blink 1s steps(2, jump-none) infinite;
+  box-shadow: 0 0 8px var(--accent-red);
 }
 
 /* ============================================
@@ -448,13 +453,13 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: var(--bg-overlay);
+  background: rgba(0, 0, 0, 0.95);
   border: 4px solid #0f0;
   display: flex;
   justify-content: center;
   align-items: center;
   z-index: 100;
-  animation: victoryPulse 0.5s ease infinite;
+  animation: victoryPulse 1s ease-in-out infinite;
 }
 
 .victory-text {
@@ -465,7 +470,7 @@
   line-height: 2;
   text-transform: uppercase;
   font-weight: bold;
-  text-shadow: 0 0 20px #0f0;
+  text-shadow: 0 0 20px #0f0, 0 0 40px #0f0;
 }
 
 .victory-sub {
@@ -477,22 +482,21 @@
 
 .loading-dots {
   display: inline-block;
-  width: 2em;
+  width: 1.5em;
   text-align: left;
 }
 
 .loading-dots::after {
   content: '...';
   display: inline-block;
-  animation: loadingDots 1.5s steps(4) infinite;
-  clip-path: inset(0 100% 0 0);
+  width: 0;
+  overflow: hidden;
+  animation: ellipsisReveal 1.5s steps(4, end) infinite;
 }
 
-@keyframes loadingDots {
-  0% { clip-path: inset(0 100% 0 0); }
-  25% { clip-path: inset(0 66% 0 0); }
-  50% { clip-path: inset(0 33% 0 0); }
-  100% { clip-path: inset(0 0 0 0); }
+@keyframes ellipsisReveal {
+  0% { width: 0; }
+  100% { width: 1.5em; }
 }
 
 /* ============================================

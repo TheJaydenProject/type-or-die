@@ -125,10 +125,9 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
   const [rouletteResult, setRouletteResult] = useState(null);
   const [isProcessingError, setIsProcessingError] = useState(false);
   const [showVictory, setShowVictory] = useState(false);
-  
-  // Ref to track roulette state synchronously to avoid race conditions
+  const cursorRef = useRef(null);
+  const sentenceRef = useRef(null);
   const rouletteActiveRef = useRef(false);
-
   const currentSentence = sentences[currentSentenceIndex] || '';
   const currentPlayer = players[playerId] || {};
 
@@ -335,6 +334,25 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
     };
   }, [socket, playerId, showRoulette, status]); 
 
+  useEffect(() => {
+    if (!cursorRef.current || !sentenceRef.current || status !== 'ALIVE') return;
+
+    const updateCursorPosition = () => {
+      if (currentCharIndex === 0) {
+        cursorRef.current.style.left = '0px';
+        return;
+      }
+
+      const prevChar = sentenceRef.current.querySelector(`[data-index="${currentCharIndex - 1}"]`);
+      if (prevChar) {
+        const left = prevChar.offsetLeft + prevChar.offsetWidth;
+        cursorRef.current.style.left = `${left}px`;
+      }
+    };
+
+    updateCursorPosition();
+  }, [currentCharIndex, status, currentSentence]);
+
   const sortedPlayers = Object.values(players).sort((a, b) => {
     if (a.status === 'ALIVE' && b.status !== 'ALIVE') return -1;
     if (a.status !== 'ALIVE' && b.status === 'ALIVE') return 1;
@@ -408,17 +426,36 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
             )}
             
             <div className="sentence-row sentence-current">
-              {currentSentence.split('').map((char, idx) => (
-                <span
-                  key={idx}
-                  className={`
-                    ${idx < currentCharIndex ? 'char-done' : 'char-pending'}
-                    ${idx === currentCharIndex && status === 'ALIVE' ? 'char-current' : ''}
-                  `.trim()}
-                >
-                  {char === ' ' ? ' ' : char}
-                </span>
-              ))}
+              <div className="words-container">
+                {currentSentence.split(' ').map((word, wordIdx) => {
+                  const wordStartIdx = currentSentence.split(' ').slice(0, wordIdx).join(' ').length + (wordIdx > 0 ? 1 : 0);
+                  const wordEndIdx = wordStartIdx + word.length;
+                  
+                  return (
+                    <React.Fragment key={wordIdx}>
+                      <span className="word">
+                        {word.split('').map((char, charIdx) => {
+                          const globalIdx = wordStartIdx + charIdx;
+                          return (
+                            <span
+                              key={charIdx}
+                              className={`
+                                ${globalIdx < currentCharIndex ? 'char-done' : 'char-pending'}
+                                ${globalIdx === currentCharIndex ? 'char-current' : ''}
+                              `.trim()}
+                            >
+                              {char}
+                            </span>
+                          );
+                        })}
+                      </span>
+                      {wordIdx < currentSentence.split(' ').length - 1 && (
+                        <span className="space-char">{' '}</span>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </div>
             </div>
             
             {currentSentenceIndex < sentences.length - 1 && (

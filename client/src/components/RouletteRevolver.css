@@ -43,7 +43,7 @@
   position: relative;
   width: clamp(300px, 40vw, 600px);
   height: clamp(300px, 40vw, 600px);
-  margin: 0 auto;
+  margin: 0 auto -80px auto;
 }
 
 .revolver-hammer {
@@ -102,15 +102,15 @@
 }
 
 .revolver-result {
-  margin-top: clamp(2rem, 4vh, 4rem);
-  min-height: clamp(100px, 15vh, 200px);
+  margin-top: 0;
+  min-height: auto;
 }
 
 .result-text {
   font-size: clamp(3rem, 8vw, 6rem);
   font-weight: 900;
   letter-spacing: clamp(8px, 1.5vw, 16px);
-  margin-bottom: clamp(1rem, 2vh, 2rem);
+  margin-bottom: 0.5rem;
   animation: resultAppear 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
 }
 
@@ -139,4 +139,5 @@
   font-size: clamp(1rem, 2vw, 1.5rem);
   color: var(--text-dim);
   letter-spacing: clamp(2px, 0.5vw, 6px);
+  margin-top: 0.5rem;
 }

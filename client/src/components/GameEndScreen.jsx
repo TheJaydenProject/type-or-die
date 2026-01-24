@@ -131,7 +131,7 @@ function GameEndScreen({ gameEndData, room, playerId, onMainMenu, onReplay }) {
                       <span className="row-rank">{(i + 1).toString().padStart(2, '0')}</span>
                       <span className="row-name">
                         {p.nickname}
-                        {p.id === winnerId && <span className="badge-win">[WIN]</span>}
+                        {p.id === winnerId && <span className="badge-win">[WINNER]</span>}
                         {p.status === 'DEAD' && <span className="badge-dead">[KIA]</span>}
                       </span>
                       <span className="row-stat">{p.completedSentences}/{sentences.length}</span>
