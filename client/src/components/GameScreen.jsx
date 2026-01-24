@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './GameScreen.css';
 import './RouletteRevolver.css';
 import GameEndScreen from './GameEndScreen';
@@ -67,7 +67,7 @@ function RouletteRevolver({ survived, previousOdds, newOdds, roll }) {
   return (
     <div className="roulette-overlay">
       <div className="revolver-container">
-        <div className="revolver-title">RUSSIAN ROULETTE</div>
+        <div className="revolver-title">JUDGMENT</div>
         
         <div className="revolver-chamber-area">
           <div className="revolver-hammer">▼</div>
@@ -124,6 +124,7 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
   const [showRoulette, setShowRoulette] = useState(false);
   const [rouletteResult, setRouletteResult] = useState(null);
   const [isProcessingError, setIsProcessingError] = useState(false);
+  const [showVictory, setShowVictory] = useState(false);
   
   // Ref to track roulette state synchronously to avoid race conditions
   const rouletteActiveRef = useRef(false);
@@ -179,6 +180,10 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
               setCurrentSentenceIndex(nextIndex);
               setCurrentCharIndex(0);
               setRemainingTime(20);
+            } else {
+              setShowVictory(true);
+              setTimeout(() => {
+              }, 2500);
             }
           }, 100);
         }
@@ -362,6 +367,16 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
                 <p>YOU ARE DEAD</p>
                 <p>FINAL: {currentPlayer.completedSentences}/{sentences.length}</p>
                 <p className="death-sub">[SPECTATING]</p>
+              </div>
+            </div>
+          )}
+
+          {showVictory && (
+            <div className="victory-screen">
+              <div className="victory-text">
+                <p>MISSION COMPLETE</p>
+                <p>SURVIVED: {currentPlayer.completedSentences}/{sentences.length}</p>
+                <p className="victory-sub">[ANALYZING RESULTS]<span className="loading-dots" /></p>
               </div>
             </div>
           )}

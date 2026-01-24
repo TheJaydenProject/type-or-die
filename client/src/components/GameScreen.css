@@ -1,10 +1,6 @@
 /* ============================================
-   ANIMATIONS (TOP FOR PRIORITY)
+   ANIMATIONS (ALL AT TOP)
    ============================================ */
-
-.terminal.flash {
-  animation: brutal-flash 0.4s ease-out forwards !important;
-}
 
 @keyframes brutal-flash {
   0% { background-color: var(--accent-red); }
@@ -23,8 +19,9 @@
 }
 
 @keyframes cursor-blink {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0; }
+  0% { opacity: 1; }
+  50% { opacity: 0; }
+  100% { opacity: 1; }
 }
 
 @keyframes strike-flash {
@@ -55,6 +52,17 @@
   }
 }
 
+@keyframes victoryPulse {
+  0%, 100% { 
+    border-color: #0f0;
+    box-shadow: inset 0 0 50px rgba(0, 255, 0, 0.1);
+  }
+  50% { 
+    border-color: #0f0;
+    box-shadow: inset 0 0 80px rgba(0, 255, 0, 0.2);
+  }
+}
+
 /* ============================================
    BASE LAYOUT
    ============================================ */
@@ -71,6 +79,10 @@
   flex-direction: column;
   overflow: hidden;
   transition: background-color 0.2s;
+}
+
+.terminal.flash {
+  animation: brutal-flash 0.4s ease-out forwards !important;
 }
 
 .terminal-body {
@@ -288,6 +300,7 @@
 .char-pending,
 .char-done {
   position: relative;
+  min-width: 1ch;
 }
 
 .char-pending.char-current::before {
@@ -298,11 +311,8 @@
   bottom: 15%;
   width: 4px;
   background-color: var(--accent-red);
-  animation: cursor-blink 1.2s infinite;
-}
-
-.cursor-blink {
-  display: none;
+  animation: cursor-blink 1s infinite;
+  z-index: 10;
 }
 
 .typing-status {
@@ -426,6 +436,63 @@
   padding: 0.3rem 0.5rem;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid var(--border-color);
+}
+
+/* ============================================
+   VICTORY PANEL
+   ============================================ */
+
+.victory-screen {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--bg-overlay);
+  border: 4px solid #0f0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 100;
+  animation: victoryPulse 0.5s ease infinite;
+}
+
+.victory-text {
+  text-align: center;
+  font-size: 3.5rem;
+  letter-spacing: 8px;
+  color: #0f0;
+  line-height: 2;
+  text-transform: uppercase;
+  font-weight: bold;
+  text-shadow: 0 0 20px #0f0;
+}
+
+.victory-sub {
+  font-size: 1.5rem;
+  color: var(--text-muted);
+  margin-top: 2rem;
+  letter-spacing: 4px;
+}
+
+.loading-dots {
+  display: inline-block;
+  width: 2em;
+  text-align: left;
+}
+
+.loading-dots::after {
+  content: '...';
+  display: inline-block;
+  animation: loadingDots 1.5s steps(4) infinite;
+  clip-path: inset(0 100% 0 0);
+}
+
+@keyframes loadingDots {
+  0% { clip-path: inset(0 100% 0 0); }
+  25% { clip-path: inset(0 66% 0 0); }
+  50% { clip-path: inset(0 33% 0 0); }
+  100% { clip-path: inset(0 0 0 0); }
 }
 
 /* ============================================
