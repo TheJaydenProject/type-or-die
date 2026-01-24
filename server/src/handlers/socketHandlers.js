@@ -4,6 +4,39 @@ const crypto = require('crypto');
 const disconnectTimers = new Map();
 
 function setupSocketHandlers(io) {
+  // Timer sync system - updates every 500ms for all active games
+  const timerInterval = setInterval(async () => {
+    try {
+      const redis = require('../config/redis');
+      const roomKeys = await redis.keys('room:*');
+      
+      for (const key of roomKeys) {
+        const roomCode = key.replace('room:', '');
+        const room = await roomManager.getRoom(roomCode);
+        
+        if (!room || room.status !== 'PLAYING') continue;
+        
+        Object.keys(room.players).forEach(pId => {
+          const player = room.players[pId];
+          if (player.status === 'ALIVE' && player.sentenceStartTime) {
+            const elapsed = (Date.now() - player.sentenceStartTime) / 1000;
+            player.remainingTime = Math.max(0, 20 - elapsed);
+            
+            io.to(roomCode).emit('timer_sync', {
+              playerId: pId,
+              remainingTime: player.remainingTime
+            });
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Timer sync error:', error.message);
+    }
+  }, 500);
+  
+  process.on('SIGTERM', () => clearInterval(timerInterval));
+  process.on('SIGINT', () => clearInterval(timerInterval));
+
   io.on('connection', (socket) => {
     console.log(`Client connected: ${socket.id}`);
 
@@ -100,9 +133,16 @@ function setupSocketHandlers(io) {
               totalTypedChars: p.totalTypedChars || 0,
               totalMistypes: p.totalMistypes || 0,
               wpm: p.averageWPM || 0,
-              status: p.status || 'ALIVE'
+              status: p.status || 'ALIVE',
+              remainingTime: p.remainingTime || 20
             });
           });
+
+          if (room.sentences && room.sentences.length > 0) {
+            socket.emit('sync_sentences', {
+              sentences: room.sentences
+            });
+          }
         }
 
         socket.to(room.roomCode).emit('player_joined', {
@@ -118,7 +158,8 @@ function setupSocketHandlers(io) {
           success: true, 
           playerId: playerId,
           room: room,
-          role: role
+          role: role,
+          sentences: room.sentences || []
         });
 
       } catch (error) {
@@ -296,7 +337,6 @@ function setupSocketHandlers(io) {
           player.currentCharIndex++;
           player.totalCorrectChars++;
 
-          // Calculate word and char position for spectators
           const words = currentSentence.split(' ');
           let charCount = 0;
           let wordIndex = 0;
@@ -376,7 +416,8 @@ function setupSocketHandlers(io) {
             totalTypedChars: player.totalTypedChars,
             totalMistypes: player.totalMistypes,
             wpm: player.currentSessionWPM,
-            status: player.status
+            status: player.status,
+            remainingTime: player.remainingTime
           });
         } else {
           player.totalMistypes++;
@@ -393,7 +434,8 @@ function setupSocketHandlers(io) {
             totalTypedChars: player.totalTypedChars,
             totalMistypes: player.totalMistypes,
             wpm: player.currentSessionWPM,
-            status: player.status
+            status: player.status,
+            remainingTime: player.remainingTime
           });
         }
 
@@ -428,7 +470,6 @@ function setupSocketHandlers(io) {
           maxStrikes: 3
         });
 
-        // If 3 strikes, trigger roulette IMMEDIATELY (no delay)
         if (player.mistakeStrikes >= 3) {
           player.mistakeStrikes = 0;
           const odds = player.rouletteOdds;
@@ -608,7 +649,6 @@ function setupSocketHandlers(io) {
         const { roomCode } = data;
         const playerId = socket.playerId;
 
-        // Get fresh room data from Redis
         const room = await roomManager.getRoom(roomCode);
         if (!room) {
           console.error('Replay failed: Room not found');
@@ -622,7 +662,6 @@ function setupSocketHandlers(io) {
 
         console.log(`REPLAY: Resetting room ${roomCode}`);
 
-        // Reset Room State
         room.status = 'LOBBY';
         room.sentences = [];
         room.gameStartedAt = null;
@@ -632,7 +671,6 @@ function setupSocketHandlers(io) {
           
           console.log(`  → Resetting ${p.nickname}: rouletteOdds ${p.rouletteOdds} → 6`);
           
-          // Reset ALL fields explicitly
           p.status = 'ALIVE';
           p.currentSentenceIndex = 0;
           p.rouletteOdds = 6;

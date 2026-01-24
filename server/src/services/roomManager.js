@@ -91,7 +91,7 @@ class RoomManager {
           id: hostId,
           nickname,
           isGuest: true,
-          socketId: null, // Will be set on socket connection
+          socketId: null,
           ipAddress: hashedIP,
           status: 'ALIVE',
           currentSentenceIndex: 0,
@@ -131,7 +131,7 @@ class RoomManager {
     // Register room for IP tracking
     await this.registerRoomCreation(hashedIP, roomCode);
 
-    console.log(`✅ Room created: ${roomCode} by ${nickname}`);
+    console.log(`Room created: ${roomCode} by ${nickname}`);
     
     return room;
   }
@@ -217,7 +217,7 @@ class RoomManager {
 
     await this.updateRoom(roomCode, room);
     
-    console.log(`✅ Player joined: ${nickname} → ${roomCode}`);
+    console.log(`Player joined: ${nickname} → ${roomCode}`);
     
     return { room, role: 'PLAYER' };
   }
@@ -225,9 +225,9 @@ class RoomManager {
   // Remove player from room
   async removePlayer(roomCode, playerId) {
     const room = await this.getRoom(roomCode);
-    if (!room) return { deleted: true }; // Room already gone
+    if (!room) return { deleted: true };
 
-    console.log(`🚪 Removing player ${playerId} from room ${roomCode}`);
+    console.log(`Removing player ${playerId} from room ${roomCode}`);
 
     // Remove from players
     delete room.players[playerId];
@@ -253,7 +253,7 @@ class RoomManager {
       if (playerIds.length > 0) {
         const oldHost = room.hostId;
         room.hostId = playerIds[0];
-        console.log(`👑 Host migrated: ${oldHost} → ${room.hostId} (${room.players[room.hostId].nickname})`);
+        console.log(`Host migrated: ${oldHost} → ${room.hostId} (${room.players[room.hostId].nickname})`);
       }
     }
 
@@ -302,7 +302,7 @@ class RoomManager {
     // Delete room
     await redis.del(`${this.ROOM_PREFIX}${roomCode}`);
     
-    console.log(`🗑️  Room deleted: ${roomCode}`);
+    console.log(`Room deleted: ${roomCode}`);
   }
 }
 

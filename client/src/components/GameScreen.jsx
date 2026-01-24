@@ -140,6 +140,7 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
   const displayPlayer = isSpectator ? spectatorTarget : currentPlayer;
 
   useEffect(() => {
+    if (isSpectator) return;
     if (status !== 'ALIVE') return;
 
     const interval = setInterval(() => {
@@ -156,7 +157,7 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
     }, 100);
 
     return () => clearInterval(interval);
-  }, [status, currentSentenceIndex, socket, room.roomCode]);
+  }, [status, currentSentenceIndex, socket, room.roomCode, isSpectator]);
 
   useEffect(() => {
     if (status !== 'ALIVE' || isProcessingError || isSpectator) return;
@@ -262,13 +263,24 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
           currentCharIndex: data.charIndex,
           currentSentenceIndex: data.sentenceIndex,
           currentWordIndex: data.currentWordIndex || 0,
-          currentCharInWord: data.currentCharInWord || 0, 
+          currentCharInWord: data.currentCharInWord || 0,
           completedSentences: data.completedSentences,
           totalCorrectChars: data.totalCorrectChars,
           totalTypedChars: data.totalTypedChars,
           totalMistypes: data.totalMistypes,
           averageWPM: data.wpm,
-          status: data.status
+          status: data.status,
+          remainingTime: data.remainingTime || 20
+        }
+      }));
+    };
+
+    const handleTimerSync = (data) => {
+      setPlayers(prev => ({
+        ...prev,
+        [data.playerId]: {
+          ...prev[data.playerId],
+          remainingTime: data.remainingTime
         }
       }));
     };
@@ -299,6 +311,18 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
     };
 
     const handleRouletteResult = (data) => {
+      if (isSpectator && data.playerId === spectatingPlayerId) {
+        console.log(`Spectator seeing roulette for ${players[data.playerId]?.nickname}`);
+        setShowRoulette(true);
+        setRouletteResult(data);
+        
+        setTimeout(() => {
+          setShowRoulette(false);
+          setRouletteResult(null);
+        }, 4500);
+      }
+      
+      // Original player logic
       if (data.playerId === playerId) {
         rouletteActiveRef.current = true;
         
@@ -367,6 +391,7 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
     };
 
     socket.on('player_progress', handlePlayerProgress);
+    socket.on('timer_sync', handleTimerSync);
     socket.on('player_strike', handlePlayerStrike);
     socket.on('roulette_result', handleRouletteResult);
     socket.on('player_died', handlePlayerDied);
@@ -374,12 +399,13 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
 
     return () => {
       socket.off('player_progress', handlePlayerProgress);
+      socket.off('timer_sync', handleTimerSync);
       socket.off('player_strike', handlePlayerStrike);
       socket.off('roulette_result', handleRouletteResult);
       socket.off('player_died', handlePlayerDied);
       socket.off('sentence_completed', handleSentenceCompleted);
     };
-  }, [socket, playerId, showRoulette, status]);
+  }, [socket, playerId, showRoulette, status, isSpectator, spectatingPlayerId, players]);
 
   const sortedPlayers = Object.values(players).sort((a, b) => {
     if (a.status === 'ALIVE' && b.status !== 'ALIVE') return -1;

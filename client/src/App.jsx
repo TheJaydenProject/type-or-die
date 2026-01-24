@@ -123,6 +123,11 @@ function App() {
       setView('LOBBY');
     });
 
+    socket.on('sync_sentences', (data) => {
+      console.log(`Syncing ${data.sentences.length} sentences for spectator`);
+      setSentences(data.sentences);
+    });
+
     return () => {
       socket.off('connect');
       socket.off('disconnect');
@@ -133,6 +138,7 @@ function App() {
       socket.off('countdown_start');
       socket.off('game_start');
       socket.off('replay_started');
+      socket.off('sync_sentences');
     };
   }, [currentRoom]);
 
@@ -250,6 +256,11 @@ function App() {
         setCurrentRoom(response.room);
         setPlayerId(response.playerId);
         setUserRole(response.role);
+
+        if (response.sentences && response.sentences.length > 0) {
+          setSentences(response.sentences);
+          console.log(`Loaded ${response.sentences.length} sentences for spectator`);
+        }
 
         if (response.role === 'SPECTATOR') {
           setView('GAME');
