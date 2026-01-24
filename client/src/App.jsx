@@ -313,15 +313,15 @@ function App() {
             <label>SENTENCE COUNT: {sentenceCount}</label>
             <input
               type="range"
-              min="10"
+              min="5"
               max="100"
-              step="10"
+              step="5"
               value={sentenceCount}
               onChange={(e) => setSentenceCount(parseInt(e.target.value))}
               className="slider"
             />
             <div className="slider-labels">
-              <span>10</span>
+              <span>5</span>
               <span>100</span>
             </div>
           </div>
@@ -387,16 +387,16 @@ function App() {
               <label>SENTENCE COUNT: {currentRoom.settings?.sentenceCount ?? 50}</label>
               <input
                 type="range"
-                min="10"
+                min="5"
                 max="100"
-                step="10"
+                step="5"
                 value={currentRoom.settings?.sentenceCount ?? 50}
                 onChange={(e) => handleChangeSentences(parseInt(e.target.value))}
                 disabled={!isHost}
                 className="slider"
               />
               <div className="slider-labels">
-                <span>10</span>
+                <span>5</span>
                 <span>100</span>
               </div>
               {!isHost && <p className="note">[HOST ONLY]</p>}
