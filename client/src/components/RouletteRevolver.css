@@ -11,12 +11,12 @@
   align-items: center;
   justify-content: center;
   z-index: 10000;
-  animation: fadeIn 0.2s ease forwards;
+  animation: scanlineFlicker 0.1s steps(2) 3;
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+@keyframes scanlineFlicker {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.95; }
 }
 
 .revolver-container {
@@ -26,6 +26,8 @@
   width: 90%;
   max-width: 1200px;
   position: relative;
+  padding: 3rem;
+  background: rgba(0, 0, 0, 0.9);
 }
 
 .revolver-title {
@@ -36,7 +38,6 @@
   border-bottom: clamp(3px, 0.5vw, 6px) solid var(--accent-red);
   padding-bottom: clamp(10px, 1vh, 20px);
   display: inline-block;
-  text-shadow: var(--glow-red);
 }
 
 .revolver-chamber-area {
@@ -54,7 +55,6 @@
   font-size: clamp(4rem, 8vw, 8rem);
   color: var(--accent-red);
   z-index: 10;
-  text-shadow: 0 0 20px var(--accent-red);
   pointer-events: none;
 }
 
@@ -87,7 +87,7 @@
 .chamber::before {
   content: '○';
   color: var(--text-dim);
-  transition: all 0.2s ease;
+  transition: none;
 }
 
 .chamber.bullet-chamber::before {
@@ -98,7 +98,6 @@
 
 .chamber.highlighted::before {
   transform: scale(1.2);
-  text-shadow: 0 0 25px currentColor;
 }
 
 .revolver-result {
@@ -111,28 +110,28 @@
   font-weight: 900;
   letter-spacing: clamp(8px, 1.5vw, 16px);
   margin-bottom: 0.5rem;
-  animation: resultAppear 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+  animation: terminalBlink 0.15s steps(2) 4;
 }
 
-@keyframes resultAppear {
-  from { opacity: 0; transform: scale(0.5); }
-  to { opacity: 1; transform: scale(1); }
+@keyframes terminalBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
 
 .revolver-result.survived .result-text {
   color: #0f0;
-  text-shadow: 0 0 20px #0f0;
 }
 
 .revolver-result.died .result-text {
   color: var(--accent-red);
-  text-shadow: 0 0 30px var(--accent-red);
-  animation: bangFlash 0.2s ease infinite;
+  animation: deathStatic 0.1s steps(3) 6;
 }
 
-@keyframes bangFlash {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.7; transform: scale(1.05); }
+@keyframes deathStatic {
+  0% { opacity: 1; transform: translate(0, 0); }
+  33% { opacity: 0.8; transform: translate(-2px, 0); }
+  66% { opacity: 0.9; transform: translate(2px, 0); }
+  100% { opacity: 1; transform: translate(0, 0); }
 }
 
 .result-odds {

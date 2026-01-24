@@ -3,7 +3,6 @@ import './GameScreen.css';
 import './RouletteRevolver.css';
 import GameEndScreen from './GameEndScreen';
 
-// Revolver Roulette Component
 function RouletteRevolver({ survived, previousOdds, newOdds, roll }) {
   const [phase, setPhase] = useState('spinning');
   const [currentHighlight, setCurrentHighlight] = useState(null);
@@ -115,7 +114,8 @@ function RouletteRevolver({ survived, previousOdds, newOdds, roll }) {
 
 function GameScreen({ socket, room, playerId, sentences, onLeave }) {
   const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
-  const [currentCharIndex, setCurrentCharIndex] = useState(0);
+  const [currentWordIndex, setCurrentWordIndex] = useState(0);
+  const [currentCharInWord, setCurrentCharInWord] = useState(0);
   const [remainingTime, setRemainingTime] = useState(20);
   const [status, setStatus] = useState('ALIVE');
   const [players, setPlayers] = useState(room.players);
@@ -125,11 +125,20 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
   const [rouletteResult, setRouletteResult] = useState(null);
   const [isProcessingError, setIsProcessingError] = useState(false);
   const [showVictory, setShowVictory] = useState(false);
-  const cursorRef = useRef(null);
-  const sentenceRef = useRef(null);
   const rouletteActiveRef = useRef(false);
+  
   const currentSentence = sentences[currentSentenceIndex] || '';
+  const words = currentSentence.split(' ');
+  const currentWord = words[currentWordIndex] || '';
   const currentPlayer = players[playerId] || {};
+
+  const calculateGlobalCharIndex = () => {
+    let index = 0;
+    for (let i = 0; i < currentWordIndex; i++) {
+      index += words[i].length + 1;
+    }
+    return index + currentCharInWord;
+  };
 
   useEffect(() => {
     if (status !== 'ALIVE') return;
@@ -155,55 +164,81 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
 
     const handleKeyPress = (e) => {
       e.preventDefault();
-
       const key = e.key;
+
+      if (key === ' ') {
+        if (currentCharInWord === currentWord.length) {
+          if (currentWordIndex < words.length - 1) {
+            setCurrentWordIndex(prev => prev + 1);
+            setCurrentCharInWord(0);
+            
+            socket.emit('char_typed', {
+              roomCode: room.roomCode,
+              char: ' ',
+              charIndex: calculateGlobalCharIndex(),
+              timestamp: Date.now()
+            });
+          }
+        } else {
+          setIsProcessingError(true);
+          socket.emit('mistype', {
+            roomCode: room.roomCode,
+            expectedChar: currentWord[currentCharInWord],
+            typedChar: key,
+            charIndex: calculateGlobalCharIndex(),
+            sentenceIndex: currentSentenceIndex
+          });
+          setCurrentWordIndex(0);
+          setCurrentCharInWord(0);
+        }
+        return;
+      }
+
       if (key.length > 1) return;
 
-      const expectedChar = currentSentence[currentCharIndex];
+      const expectedChar = currentWord[currentCharInWord];
 
       if (key === expectedChar) {
-        const newCharIndex = currentCharIndex + 1;
-        setCurrentCharIndex(newCharIndex);
+        const newCharInWord = currentCharInWord + 1;
+        setCurrentCharInWord(newCharInWord);
 
         socket.emit('char_typed', {
           roomCode: room.roomCode,
           char: key,
-          charIndex: currentCharIndex,
+          charIndex: calculateGlobalCharIndex(),
           timestamp: Date.now()
         });
 
-        if (newCharIndex === currentSentence.length) {
+        if (newCharInWord === currentWord.length && currentWordIndex === words.length - 1) {
           setTimeout(() => {
             const nextIndex = currentSentenceIndex + 1;
             if (nextIndex < sentences.length) {
               setCurrentSentenceIndex(nextIndex);
-              setCurrentCharIndex(0);
+              setCurrentWordIndex(0);
+              setCurrentCharInWord(0);
               setRemainingTime(20);
             } else {
               setShowVictory(true);
-              setTimeout(() => {
-              }, 2500);
             }
           }, 100);
         }
       } else {
         setIsProcessingError(true);
-        
         socket.emit('mistype', {
           roomCode: room.roomCode,
           expectedChar: expectedChar,
           typedChar: key,
-          charIndex: currentCharIndex,
+          charIndex: calculateGlobalCharIndex(),
           sentenceIndex: currentSentenceIndex
         });
-        
-        setCurrentCharIndex(0);
+        setCurrentWordIndex(0);
+        setCurrentCharInWord(0);
       }
     };
 
     document.addEventListener('keydown', handleKeyPress);
     return () => document.removeEventListener('keydown', handleKeyPress);
-  }, [status, isProcessingError, currentCharIndex, currentSentence, currentSentenceIndex, socket, room.roomCode, sentences.length]);
+  }, [status, isProcessingError, currentCharInWord, currentWord, currentWordIndex, words, currentSentenceIndex, socket, room.roomCode, sentences.length]);
 
   useEffect(() => {
     const handlePlayerProgress = (data) => {
@@ -250,9 +285,6 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
 
     const handleRouletteResult = (data) => {
       if (data.playerId === playerId) {
-        console.log('🎰 Roulette result:', data.survived ? 'SURVIVED' : 'DIED');
-        
-        // Update synchronous Ref immediately
         rouletteActiveRef.current = true;
         
         setShowRoulette(true);
@@ -277,7 +309,8 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
           rouletteActiveRef.current = false;
           
           if (data.survived) {
-            setCurrentCharIndex(0);
+            setCurrentWordIndex(0);
+            setCurrentCharInWord(0);
             setRemainingTime(20);
             setIsProcessingError(false);
           }
@@ -318,7 +351,6 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
       }));
     };
 
-
     socket.on('player_progress', handlePlayerProgress);
     socket.on('player_strike', handlePlayerStrike);
     socket.on('roulette_result', handleRouletteResult);
@@ -332,26 +364,7 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
       socket.off('player_died', handlePlayerDied);
       socket.off('sentence_completed', handleSentenceCompleted);
     };
-  }, [socket, playerId, showRoulette, status]); 
-
-  useEffect(() => {
-    if (!cursorRef.current || !sentenceRef.current || status !== 'ALIVE') return;
-
-    const updateCursorPosition = () => {
-      if (currentCharIndex === 0) {
-        cursorRef.current.style.left = '0px';
-        return;
-      }
-
-      const prevChar = sentenceRef.current.querySelector(`[data-index="${currentCharIndex - 1}"]`);
-      if (prevChar) {
-        const left = prevChar.offsetLeft + prevChar.offsetWidth;
-        cursorRef.current.style.left = `${left}px`;
-      }
-    };
-
-    updateCursorPosition();
-  }, [currentCharIndex, status, currentSentence]);
+  }, [socket, playerId, showRoulette, status]);
 
   const sortedPlayers = Object.values(players).sort((a, b) => {
     if (a.status === 'ALIVE' && b.status !== 'ALIVE') return -1;
@@ -427,34 +440,39 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
             
             <div className="sentence-row sentence-current">
               <div className="words-container">
-                {currentSentence.split(' ').map((word, wordIdx) => {
-                  const wordStartIdx = currentSentence.split(' ').slice(0, wordIdx).join(' ').length + (wordIdx > 0 ? 1 : 0);
-                  const wordEndIdx = wordStartIdx + word.length;
-                  
-                  return (
-                    <React.Fragment key={wordIdx}>
-                      <span className="word">
-                        {word.split('').map((char, charIdx) => {
-                          const globalIdx = wordStartIdx + charIdx;
-                          return (
-                            <span
-                              key={charIdx}
-                              className={`
-                                ${globalIdx < currentCharIndex ? 'char-done' : 'char-pending'}
-                                ${globalIdx === currentCharIndex ? 'char-current' : ''}
-                              `.trim()}
-                            >
-                              {char}
-                            </span>
-                          );
-                        })}
-                      </span>
-                      {wordIdx < currentSentence.split(' ').length - 1 && (
-                        <span className="space-char">{' '}</span>
+                {words.map((word, wordIdx) => (
+                  <React.Fragment key={wordIdx}>
+                    <span className="word">
+                      {word.split('').map((char, charIdx) => {
+                        let className = 'char-pending';
+                        
+                        if (wordIdx < currentWordIndex) {
+                          className = 'char-done';
+                        } else if (wordIdx === currentWordIndex) {
+                          if (charIdx < currentCharInWord) {
+                            className = 'char-done';
+                          } else if (charIdx === currentCharInWord) {
+                            className = 'char-current';
+                          }
+                        }
+                        
+                        return (
+                          <span key={charIdx} className={className}>
+                            {char}
+                          </span>
+                        );
+                      })}
+                      {wordIdx === currentWordIndex && currentCharInWord === currentWord.length && (
+                        <span className="char-current-after"></span>
                       )}
-                    </React.Fragment>
-                  );
-                })}
+                    </span>
+                    {wordIdx < words.length - 1 && (
+                      <span className={`space-char ${wordIdx < currentWordIndex ? 'char-done' : 'char-pending'}`}>
+                        {' '}
+                      </span>
+                    )}
+                  </React.Fragment>
+                ))}
               </div>
             </div>
             
@@ -463,10 +481,6 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
                 {sentences[currentSentenceIndex + 1]}
               </div>
             )}
-          </div>
-
-          <div className="typing-status">
-            {status === 'ALIVE' ? '> TYPE TO SURVIVE' : '> [ELIMINATED]'}
           </div>
         </div>
 
