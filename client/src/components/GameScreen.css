@@ -560,3 +560,54 @@
 .stats-line:last-child {
   border-bottom: none;
 }
+
+
+/* ===== SPECTATOR MODE ===== */
+
+.spectator-overlay {
+  position: absolute;
+  top: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  text-align: center;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.spectator-badge {
+  background: rgba(0, 0, 0, 0.95);
+  border: 2px solid #0f0;
+  padding: 1rem 2rem;
+  font-size: 1.2rem;
+  letter-spacing: 3px;
+  color: #0f0;
+  font-weight: bold;
+  text-shadow: 0 0 10px #0f0;
+}
+
+.spectator-hint {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  letter-spacing: 2px;
+  background: rgba(0, 0, 0, 0.8);
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border-color);
+}
+
+.lb-clickable {
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.lb-clickable:hover {
+  transform: translateX(5px);
+  border-color: #0f0;
+  background: rgba(0, 255, 0, 0.05);
+}
+
+.lb-clickable:active {
+  transform: translateX(3px);
+}

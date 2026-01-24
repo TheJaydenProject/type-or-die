@@ -1,6 +1,6 @@
 import React from 'react';
 
-function LeaderboardPanel({ players, playerId, totalSentences }) {
+function LeaderboardPanel({ players, playerId, totalSentences, onPlayerClick, highlightedPlayerId }) {
   const sortedPlayers = Object.values(players).sort((a, b) => {
     if (a.status === 'ALIVE' && b.status !== 'ALIVE') return -1;
     if (a.status !== 'ALIVE' && b.status === 'ALIVE') return 1;
@@ -19,7 +19,9 @@ function LeaderboardPanel({ players, playerId, totalSentences }) {
         {sortedPlayers.map((player, idx) => (
           <div
             key={player.id}
-            className={`lb-entry ${player.status === 'DEAD' ? 'lb-dead' : ''} ${player.id === playerId ? 'lb-you' : ''}`}
+            className={`lb-entry ${player.status === 'DEAD' ? 'lb-dead' : ''} ${player.id === (highlightedPlayerId || playerId) ? 'lb-you' : ''} ${onPlayerClick ? 'lb-clickable' : ''}`}
+            onClick={() => onPlayerClick && player.status === 'ALIVE' && onPlayerClick(player.id)}
+            style={{ cursor: onPlayerClick && player.status === 'ALIVE' ? 'pointer' : 'default' }}
           >
             <div className="lb-rank">
               {idx + 1}. {player.id === playerId ? '[YOU] ' : ''}{player.nickname}

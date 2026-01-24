@@ -14,7 +14,7 @@ class RoomManager {
 
   // Generate unique 6-character room code
   generateRoomCode() {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Removed confusing chars (0,O,I,1)
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let code = '';
     for (let i = 0; i < 6; i++) {
       code += chars[Math.floor(Math.random() * chars.length)];
@@ -102,6 +102,8 @@ class RoomManager {
           totalTypedChars: 0,
           totalMistypes: 0,
           currentCharIndex: 0,
+          currentWordIndex: 0,
+          currentCharInWord: 0,
           sentenceStartTime: null,
           remainingTime: 20,
           rouletteHistory: [],
@@ -202,6 +204,8 @@ class RoomManager {
       totalTypedChars: 0,
       totalMistypes: 0,
       currentCharIndex: 0,
+      currentWordIndex: 0,
+      currentCharInWord: 0,
       sentenceStartTime: null,
       remainingTime: 20,
       rouletteHistory: [],

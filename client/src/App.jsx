@@ -19,6 +19,7 @@ function App() {
   const [countdown, setCountdown] = useState(null);
   const [sentences, setSentences] = useState([]);
   const [gameEndData, setGameEndData] = useState(null);
+  const [userRole, setUserRole] = useState(null);
 
   useEffect(() => {
     const handleGameEnded = (data) => {
@@ -141,19 +142,32 @@ function App() {
     if (savedSession && connected && view === 'MENU') {
       const { playerId, roomCode } = JSON.parse(savedSession);
       
-      console.log('🔄 Attempting reconnection...', { playerId, roomCode });
+      console.log('Attempting reconnection...', { playerId, roomCode });
       setLoading(true);
       
       socket.emit('reconnect_attempt', { roomCode, playerId }, (response) => {
         if (response.success) {
-          console.log('✅ RECONNECTION SUCCESSFUL');
+          console.log('RECONNECTION SUCCESSFUL');
           setCurrentRoom(response.room);
           setPlayerId(response.playerId);
-          setView('LOBBY');
+          
+          // Determine role on reconnect
+          const player = response.room.players[response.playerId];
+          const isSpectator = response.room.spectators?.includes(response.playerId) || 
+                              player?.status === 'DEAD';
+          setUserRole(isSpectator ? 'SPECTATOR' : 'PLAYER');
+          
+          // Route based on game state
+          if (response.room.status === 'PLAYING' || response.room.status === 'COUNTDOWN') {
+            setView('GAME');
+          } else {
+            setView('LOBBY');
+          }
+          
           setError('Reconnected successfully!');
           setTimeout(() => setError(''), 2000);
         } else {
-          console.log('❌ RECONNECTION FAILED:', response.error);
+          console.log('RECONNECTION FAILED:', response.error);
           setError(`RECONNECTION FAILED: ${response.error}`);
           localStorage.removeItem('type_or_die_session');
           setTimeout(() => setError(''), 3000);
@@ -162,6 +176,21 @@ function App() {
       });
     }
   }, [connected, view]);
+
+  useEffect(() => {
+    const handlePlayerDied = (data) => {
+      if (data.playerId === playerId) {
+        console.log('💀 YOU DIED - Transitioning to spectator mode');
+        setUserRole('SPECTATOR');
+      }
+    };
+
+    socket.on('player_died', handlePlayerDied);
+
+    return () => {
+      socket.off('player_died', handlePlayerDied);
+    };
+  }, [playerId]);
 
   const handleCreateRoom = () => {
     if (!nickname.trim()) {
@@ -184,6 +213,7 @@ function App() {
         console.log('ROOM_CREATED:', response.roomCode);
         setCurrentRoom(response.room);
         setPlayerId(response.playerId);
+        setUserRole('PLAYER');
         setView('LOBBY');
         localStorage.setItem('type_or_die_session', JSON.stringify({
           playerId: response.playerId,
@@ -219,7 +249,14 @@ function App() {
         console.log('ROOM_JOINED:', response.room.roomCode);
         setCurrentRoom(response.room);
         setPlayerId(response.playerId);
-        setView('LOBBY');
+        setUserRole(response.role);
+
+        if (response.role === 'SPECTATOR') {
+          setView('GAME');
+        } else {
+          setView('LOBBY');
+        }
+
         localStorage.setItem('type_or_die_session', JSON.stringify({
           playerId: response.playerId,
           roomCode: response.room.roomCode
@@ -457,6 +494,7 @@ function App() {
         playerId={playerId}
         sentences={sentences}
         onLeave={handleLeaveRoom}
+        isSpectator={userRole === 'SPECTATOR'}
       />
     );
   }

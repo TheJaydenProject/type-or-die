@@ -116,7 +116,7 @@ function RouletteRevolver({ survived, previousOdds, newOdds, roll }) {
   );
 }
 
-function GameScreen({ socket, room, playerId, sentences, onLeave }) {
+function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = false }) {
   const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const [currentCharInWord, setCurrentCharInWord] = useState(0);
@@ -135,6 +135,9 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
   const words = currentSentence.split(' ');
   const currentWord = words[currentWordIndex] || '';
   const currentPlayer = players[playerId] || {};
+  const [spectatingPlayerId, setSpectatingPlayerId] = useState(null);
+  const spectatorTarget = isSpectator && spectatingPlayerId ? players[spectatingPlayerId] : null;
+  const displayPlayer = isSpectator ? spectatorTarget : currentPlayer;
 
   useEffect(() => {
     if (status !== 'ALIVE') return;
@@ -156,7 +159,7 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
   }, [status, currentSentenceIndex, socket, room.roomCode]);
 
   useEffect(() => {
-    if (status !== 'ALIVE' || isProcessingError) return;
+    if (status !== 'ALIVE' || isProcessingError || isSpectator) return;
 
     const handleKeyPress = (e) => {
       e.preventDefault();
@@ -238,7 +241,17 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
 
     document.addEventListener('keydown', handleKeyPress);
     return () => document.removeEventListener('keydown', handleKeyPress);
-  }, [status, isProcessingError, currentCharInWord, currentWord, currentWordIndex, words, currentSentenceIndex, socket, room.roomCode, sentences.length]);
+  }, [status, isProcessingError, isSpectator, currentCharInWord, currentWord, currentWordIndex, words, currentSentenceIndex, socket, room.roomCode, sentences.length]);
+
+  useEffect(() => {
+    if (isSpectator && !spectatingPlayerId && players) {
+      const alivePlayers = Object.values(players).filter(p => p.status === 'ALIVE');
+      if (alivePlayers.length > 0) {
+        setSpectatingPlayerId(alivePlayers[0].id);
+        console.log(`Auto-spectating: ${alivePlayers[0].nickname}`);
+      }
+    }
+  }, [isSpectator, spectatingPlayerId, players]);
 
   useEffect(() => {
     const handlePlayerProgress = (data) => {
@@ -248,6 +261,8 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
           ...prev[data.playerId],
           currentCharIndex: data.charIndex,
           currentSentenceIndex: data.sentenceIndex,
+          currentWordIndex: data.currentWordIndex || 0,
+          currentCharInWord: data.currentCharInWord || 0, 
           completedSentences: data.completedSentences,
           totalCorrectChars: data.totalCorrectChars,
           totalTypedChars: data.totalTypedChars,
@@ -412,19 +427,30 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
             </div>
           )}
 
+          {isSpectator && spectatorTarget && (
+            <div className="spectator-overlay">
+              <div className="spectator-badge">
+                SPECTATING: {spectatorTarget.nickname}
+              </div>
+              <div className="spectator-hint">
+                Click any player in the leaderboard to switch view
+              </div>
+            </div>
+          )}
+
           <StatusHUD
-            remainingTime={remainingTime}
-            mistakeStrikes={currentPlayer.mistakeStrikes || 0}
-            currentSentenceIndex={currentSentenceIndex}
+            remainingTime={isSpectator && spectatorTarget ? (spectatorTarget.remainingTime || 20) : remainingTime}
+            mistakeStrikes={isSpectator && spectatorTarget ? (spectatorTarget.mistakeStrikes || 0) : (currentPlayer.mistakeStrikes || 0)}
+            currentSentenceIndex={isSpectator && spectatorTarget ? (spectatorTarget.currentSentenceIndex || 0) : currentSentenceIndex}
             totalSentences={sentences.length}
             mistypeFlash={mistypeFlash}
           />
 
           <TypingField
             sentences={sentences}
-            currentSentenceIndex={currentSentenceIndex}
-            currentWordIndex={currentWordIndex}
-            currentCharInWord={currentCharInWord}
+            currentSentenceIndex={isSpectator && spectatorTarget ? (spectatorTarget.currentSentenceIndex || 0) : currentSentenceIndex}
+            currentWordIndex={isSpectator && spectatorTarget ? (spectatorTarget.currentWordIndex || 0) : currentWordIndex}
+            currentCharInWord={isSpectator && spectatorTarget ? (spectatorTarget.currentCharInWord || 0) : currentCharInWord}
           />
         </div>
 
@@ -432,6 +458,8 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
           players={players}
           playerId={playerId}
           totalSentences={sentences.length}
+          onPlayerClick={isSpectator ? setSpectatingPlayerId : undefined}
+          highlightedPlayerId={isSpectator ? spectatingPlayerId : playerId}
         />
       </div>
     </div>

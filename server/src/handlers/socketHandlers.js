@@ -41,6 +41,7 @@ function setupSocketHandlers(io) {
           success: true, 
           roomCode: room.roomCode,
           playerId: playerId,
+          role: 'PLAYER',
           room: room
         });
 
@@ -83,6 +84,25 @@ function setupSocketHandlers(io) {
         if (role === 'PLAYER') {
           room.players[playerId].socketId = socket.id;
           await roomManager.updateRoom(room.roomCode, room);
+        }
+
+        if (role === 'SPECTATOR' && (room.status === 'PLAYING' || room.status === 'COUNTDOWN')) {
+          Object.keys(room.players).forEach(pId => {
+            const p = room.players[pId];
+            socket.emit('player_progress', {
+              playerId: pId,
+              charIndex: p.currentCharIndex || 0,
+              sentenceIndex: p.currentSentenceIndex || 0,
+              currentWordIndex: p.currentWordIndex || 0,
+              currentCharInWord: p.currentCharInWord || 0,
+              completedSentences: p.completedSentences || 0,
+              totalCorrectChars: p.totalCorrectChars || 0,
+              totalTypedChars: p.totalTypedChars || 0,
+              totalMistypes: p.totalMistypes || 0,
+              wpm: p.averageWPM || 0,
+              status: p.status || 'ALIVE'
+            });
+          });
         }
 
         socket.to(room.roomCode).emit('player_joined', {
@@ -205,6 +225,8 @@ function setupSocketHandlers(io) {
           player.totalTypedChars = 0;
           player.totalMistypes = 0;
           player.currentCharIndex = 0;
+          player.currentWordIndex = 0;
+          player.currentCharInWord = 0; 
           player.sentenceStartTime = null;
           player.remainingTime = 20;
           player.rouletteHistory = [];
@@ -274,6 +296,24 @@ function setupSocketHandlers(io) {
           player.currentCharIndex++;
           player.totalCorrectChars++;
 
+          // Calculate word and char position for spectators
+          const words = currentSentence.split(' ');
+          let charCount = 0;
+          let wordIndex = 0;
+          let charInWord = 0;
+          
+          for (let i = 0; i < words.length; i++) {
+            if (charCount + words[i].length >= player.currentCharIndex) {
+              wordIndex = i;
+              charInWord = player.currentCharIndex - charCount;
+              break;
+            }
+            charCount += words[i].length + 1;
+          }
+          
+          player.currentWordIndex = wordIndex;
+          player.currentCharInWord = charInWord;
+
           const timeElapsed = (Date.now() - player.sentenceStartTime) / 1000 / 60;
           const charsTyped = player.currentCharIndex;
           player.currentSessionWPM = Math.round((charsTyped / 5) / timeElapsed);
@@ -329,6 +369,8 @@ function setupSocketHandlers(io) {
             playerId: playerId,
             charIndex: player.currentCharIndex,
             sentenceIndex: player.currentSentenceIndex,
+            currentWordIndex: wordIndex,
+            currentCharInWord: charInWord,
             completedSentences: player.completedSentences,
             totalCorrectChars: player.totalCorrectChars,
             totalTypedChars: player.totalTypedChars,
@@ -344,6 +386,8 @@ function setupSocketHandlers(io) {
             playerId: playerId,
             charIndex: player.currentCharIndex,
             sentenceIndex: player.currentSentenceIndex,
+            currentWordIndex: player.currentWordIndex || 0,
+            currentCharInWord: player.currentCharInWord || 0,
             completedSentences: player.completedSentences,
             totalCorrectChars: player.totalCorrectChars,
             totalTypedChars: player.totalTypedChars,
@@ -658,10 +702,15 @@ function setupSocketHandlers(io) {
 
         console.log(`Player reconnected: ${playerId}`);
 
+        const reconnectedPlayer = updatedRoom.players[playerId];
+        const isSpectator = updatedRoom.spectators?.includes(playerId) || 
+                            reconnectedPlayer?.status === 'DEAD';
+
         callback({ 
           success: true, 
           room: updatedRoom,
-          playerId: playerId
+          playerId: playerId,
+          role: isSpectator ? 'SPECTATOR' : 'PLAYER'
         });
 
       } catch (error) {
