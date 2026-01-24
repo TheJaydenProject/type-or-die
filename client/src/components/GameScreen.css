@@ -7,8 +7,8 @@
 }
 
 @keyframes brutal-flash {
-  0% { background-color: #ff0000; }
-  100% { background-color: #000000; }
+  0% { background-color: var(--accent-red); }
+  100% { background-color: var(--bg-app); }
 }
 
 @keyframes pulse-critical {
@@ -23,13 +23,13 @@
 }
 
 @keyframes cursor-blink {
-  0%, 49% { opacity: 1; }
-  50%, 100% { opacity: 0; }
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
 }
 
 @keyframes strike-flash {
   0% {
-    color: #ff0000;
+    color: var(--accent-red);
     transform: scale(1);
   }
   50% {
@@ -37,21 +37,21 @@
     transform: scale(1.3);
   }
   100% {
-    color: #ff0000;
+    color: var(--accent-red);
     transform: scale(1);
   }
 }
 
 @keyframes mega-flash {
   0%, 100% {
-    color: #ff0000;
+    color: var(--accent-red);
     transform: scale(1);
-    text-shadow: 0 0 10px #ff0000;
+    text-shadow: var(--glow-red);
   }
   50% {
-    color: #fff;
+    color: var(--text-main);
     transform: scale(2);
-    text-shadow: 0 0 30px #ff0000, 0 0 60px #ff0000;
+    text-shadow: 0 0 30px var(--accent-red), 0 0 60px var(--accent-red);
   }
 }
 
@@ -65,8 +65,8 @@
   left: 0;
   width: 100vw;
   height: 100vh;
-  background-color: #000;
-  color: #fff;
+  background-color: var(--bg-app);
+  color: var(--text-main);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -108,7 +108,7 @@
 .roulette-odds {
   font-size: 1.5rem;
   margin-top: 2rem;
-  color: #888;
+  color: var(--text-muted);
   letter-spacing: 2px;
 }
 
@@ -118,32 +118,43 @@
 
 .terminal-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: flex-end;
   padding: 1.5rem 2rem;
-  border-bottom: 2px solid #222;
+  border-bottom: 2px solid var(--border-color);
 }
 
-.term-label {
-  font-size: 1.1rem;
+.term-btn {
+  padding: 0.8rem 2rem;
+  background: transparent;
+  border: 2px solid var(--text-dim);
+  color: var(--text-muted);
+  font-size: 1rem;
   letter-spacing: 3px;
-  color: #666;
+  cursor: crosshair;
+  transition: all 0.1s;
   font-weight: bold;
+}
+
+.term-btn:hover {
+  border-color: var(--accent-red);
+  color: var(--accent-red);
+  box-shadow: 0 0 10px rgba(255, 0, 0, 0.3);
 }
 
 .term-timer {
   font-size: 3rem;
   letter-spacing: 4px;
-  color: #fff;
+  color: var(--text-main);
   font-variant-numeric: tabular-nums;
   font-weight: bold;
   transition: all 0.2s;
 }
 
 .term-timer.critical {
-  color: #ff0000;
+  color: var(--accent-red);
   animation: pulse-critical 0.5s infinite;
-  text-shadow: 0 0 20px #ff0000;
+  text-shadow: 0 0 20px var(--accent-red);
 }
 
 .strikes-container {
@@ -154,37 +165,19 @@
 
 .strike-box {
   font-size: 3rem;
-  color: #333;
+  color: var(--border-color);
   font-weight: bold;
   transition: all 0.2s;
 }
 
 .strike-box.crossed {
-  color: #ff0000;
+  color: var(--accent-red);
   animation: strike-flash 0.5s ease-out;
-  text-shadow: 0 0 15px #ff0000;
+  text-shadow: 0 0 15px var(--accent-red);
 }
 
 .strike-box.flash-strike {
   animation: mega-flash 0.3s ease-out;
-}
-
-.term-btn {
-  padding: 0.8rem 2rem;
-  background: transparent;
-  border: 2px solid #444;
-  color: #888;
-  font-size: 1rem;
-  letter-spacing: 3px;
-  cursor: crosshair;
-  transition: all 0.1s;
-  font-weight: bold;
-}
-
-.term-btn:hover {
-  border-color: #ff0000;
-  color: #ff0000;
-  box-shadow: 0 0 10px rgba(255, 0, 0, 0.3);
 }
 
 /* ============================================
@@ -198,7 +191,7 @@
   justify-content: flex-start;
   align-items: center;
   padding: 3rem 2rem;
-  border-right: 2px solid #222;
+  border-right: 2px solid var(--border-color);
 }
 
 .game-status-bar {
@@ -209,7 +202,14 @@
   max-width: 900px;
   margin-bottom: 3rem;
   padding-bottom: 1.5rem;
-  border-bottom: 2px solid #333;
+  border-bottom: 2px solid var(--border-color);
+}
+
+.term-label {
+  font-size: 1.5rem;
+  letter-spacing: 4px;
+  color: #666;
+  font-weight: bold;
 }
 
 .death-screen {
@@ -218,8 +218,8 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.95);
-  border: 4px solid #ff0000;
+  background: var(--bg-overlay);
+  border: 4px solid var(--accent-red);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -230,16 +230,16 @@
   text-align: center;
   font-size: 3.5rem;
   letter-spacing: 8px;
-  color: #ff0000;
+  color: var(--accent-red);
   line-height: 2;
   text-transform: uppercase;
   font-weight: bold;
-  text-shadow: 0 0 20px #ff0000;
+  text-shadow: 0 0 20px var(--accent-red);
 }
 
 .death-sub {
   font-size: 1.5rem;
-  color: #888;
+  color: var(--text-muted);
   margin-top: 2rem;
   letter-spacing: 4px;
 }
@@ -249,7 +249,8 @@
   flex-direction: column;
   gap: 3rem;
   align-items: center;
-  max-width: 90%;
+  width: 90%;
+  max-width: 900px;
   padding: 2rem 0;
 }
 
@@ -258,50 +259,46 @@
   line-height: 2;
   letter-spacing: 3px;
   text-align: center;
-  white-space: pre-wrap;
-  word-break: keep-all;
-  overflow-wrap: break-word;
   transition: all 0.3s ease;
+  width: 100%;
 }
 
 .sentence-prev,
 .sentence-next {
-  color: #444;
+  color: var(--text-dim);
   font-size: 1.6rem;
   opacity: 0.5;
 }
 
 .sentence-current {
-  color: #fff;
+  color: var(--text-main);
   font-size: 3rem;
   font-weight: 500;
 }
 
 .char-done {
-  color: #ff0000;
-  position: relative;
+  color: var(--accent-red);
+  text-shadow: 0 0 8px rgba(255, 0, 0, 0.5);
 }
 
 .char-pending {
   color: #555;
+}
+
+.char-pending,
+.char-done {
   position: relative;
 }
 
-.char-pending.char-current {
-  color: #555;
-  position: relative;
-  display: inline-block;
-}
-
-.char-pending.char-current::after {
+.char-pending.char-current::before {
   content: '';
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 2px;
-  height: 5px;
-  background-color: #ff0000;
-  animation: cursor-blink 1s infinite;
+  left: -2px;
+  top: 15%;
+  bottom: 15%;
+  width: 4px;
+  background-color: var(--accent-red);
+  animation: cursor-blink 1.2s infinite;
 }
 
 .cursor-blink {
@@ -327,23 +324,26 @@
   padding: 2.5rem;
   overflow: hidden;
   background: rgba(10, 10, 10, 0.5);
+  max-height: 100vh;
 }
 
 .lb-header {
   font-size: 1.3rem;
   letter-spacing: 4px;
   padding-bottom: 1.5rem;
-  border-bottom: 2px solid #333;
+  border-bottom: 2px solid var(--border-color);
   margin-bottom: 1.5rem;
-  color: #888;
+  color: var(--text-muted);
   text-transform: uppercase;
   font-weight: bold;
+  flex-shrink: 0;
 }
 
 .lb-list {
   flex: 1;
   overflow-y: auto;
   margin-bottom: 2rem;
+  min-height: 0;
 }
 
 .lb-list::-webkit-scrollbar {
@@ -351,32 +351,32 @@
 }
 
 .lb-list::-webkit-scrollbar-track {
-  background: #000;
+  background: var(--bg-app);
 }
 
 .lb-list::-webkit-scrollbar-thumb {
-  background: #333;
+  background: var(--border-color);
 }
 
 .lb-list::-webkit-scrollbar-thumb:hover {
-  background: #444;
+  background: var(--text-dim);
 }
 
 .lb-entry {
   padding: 1.5rem;
-  border: 2px solid #222;
+  border: 2px solid var(--border-color);
   margin-bottom: 0.8rem;
   background: rgba(0, 0, 0, 0.7);
   transition: all 0.2s;
 }
 
 .lb-entry:hover {
-  border-color: #444;
+  border-color: var(--text-dim);
   background: rgba(20, 20, 20, 0.7);
 }
 
 .lb-you {
-  border-color: #ff0000;
+  border-color: var(--accent-red);
   background: rgba(255, 0, 0, 0.05);
   box-shadow: 0 0 15px rgba(255, 0, 0, 0.2);
 }
@@ -399,7 +399,7 @@
   background: #1a1a1a;
   margin-bottom: 0.8rem;
   position: relative;
-  border: 1px solid #222;
+  border: 1px solid var(--border-color);
 }
 
 .lb-fill {
@@ -407,16 +407,16 @@
   left: 0;
   top: 0;
   height: 100%;
-  background: #ff0000;
+  background: var(--accent-red);
   transition: width 0.3s;
-  box-shadow: 0 0 10px rgba(255, 0, 0, 0.5);
+  box-shadow: var(--glow-red);
 }
 
 .lb-stats {
   display: flex;
   justify-content: space-between;
   font-size: 1rem;
-  color: #888;
+  color: var(--text-muted);
   letter-spacing: 2px;
   font-variant-numeric: tabular-nums;
   font-weight: bold;
@@ -425,7 +425,7 @@
 .lb-stats span {
   padding: 0.3rem 0.5rem;
   background: rgba(255, 255, 255, 0.02);
-  border: 1px solid #222;
+  border: 1px solid var(--border-color);
 }
 
 /* ============================================
@@ -433,7 +433,7 @@
    ============================================ */
 
 .stats-panel {
-  border-top: 2px solid #333;
+  border-top: 2px solid var(--border-color);
   padding-top: 1.5rem;
   background: rgba(0, 0, 0, 0.3);
   padding: 1.5rem;

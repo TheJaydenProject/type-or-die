@@ -351,7 +351,6 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
       )}
 
       <div className="terminal-header">
-        <span className="term-label">SENTENCE {currentSentenceIndex + 1}/{sentences.length}</span>
         <button onClick={onLeave} className="term-btn">EXIT</button>
       </div>
 
@@ -378,6 +377,8 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
                 </span>
               ))}
             </div>
+            
+            <span className="term-label">SENTENCE {currentSentenceIndex + 1}/{sentences.length}</span>
             
             <span className={`term-timer ${remainingTime < 5 ? 'critical' : ''}`}>
               {remainingTime.toFixed(1)}S

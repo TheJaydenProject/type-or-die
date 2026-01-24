@@ -6,7 +6,7 @@
   left: 0;
   width: 100vw;
   height: 100vh;
-  background-color: #000;
+  background-color: var(--bg-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -19,11 +19,11 @@
   max-width: 1200px;
   height: 85vh;
   min-height: 700px;
-  background-color: #000;
-  border: 1px solid var(--text-dim);
+  background-color: var(--bg-app);
+  border: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
-  box-shadow: 0 0 0 1px #000;
+  box-shadow: 0 0 0 1px var(--bg-app);
 }
 
 /* --- HEADER --- */
@@ -31,15 +31,15 @@
   display: flex;
   justify-content: space-between;
   padding: 1.2rem 2rem;
-  border-bottom: 1px solid var(--text-dim);
-  background-color: #0a0a0a;
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--bg-panel);
 }
 
 .header-title {
   font-size: 1.4rem;
   font-weight: 700;
   letter-spacing: 4px;
-  color: #fff;
+  color: var(--text-main);
 }
 
 .header-id {
@@ -58,7 +58,7 @@
 
 /* --- LEFT COLUMN: SUMMARY --- */
 .results-summary {
-  border-right: 1px solid var(--text-dim);
+  border-right: 1px solid var(--border-color);
   padding: 2.5rem;
   display: flex;
   flex-direction: column;
@@ -67,28 +67,12 @@
   overflow-y: auto;
 }
 
-.results-summary::-webkit-scrollbar {
-  width: 6px;
-}
-
-.results-summary::-webkit-scrollbar-track {
-  background: #000;
-}
-
-.results-summary::-webkit-scrollbar-thumb {
-  background: var(--text-dim);
-}
-
-.results-summary::-webkit-scrollbar-thumb:hover {
-  background: #fff;
-}
-
 .grade-container {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--text-dim);
+  border: 1px solid var(--border-color);
   padding: 3rem 0;
 }
 
@@ -103,7 +87,7 @@
   font-size: 7rem;
   line-height: 1;
   font-weight: 700;
-  color: #fff;
+  color: var(--text-main);
   text-decoration: none;
   border: none;
 }
@@ -113,7 +97,7 @@
 }
 
 .grade-SS, .grade-S { 
-  text-shadow: 0 0 10px rgba(255, 255, 255, 0.5); 
+  text-shadow: var(--glow-text);
 }
 
 .stats-block {
@@ -135,7 +119,7 @@
 }
 
 .stat-value {
-  color: #fff;
+  color: var(--text-main);
   font-weight: bold;
   letter-spacing: 1px;
   font-variant-numeric: tabular-nums;
@@ -153,12 +137,12 @@
 .results-data {
   display: flex;
   flex-direction: column;
-  background-color: #050505;
+  background-color: var(--bg-panel);
 }
 
 .tabs-nav {
   display: flex;
-  border-bottom: 1px solid var(--text-dim);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .tab-btn {
@@ -166,7 +150,7 @@
   padding: 1.2rem;
   background: transparent;
   border: none;
-  border-right: 1px solid var(--text-dim);
+  border-right: 1px solid var(--border-color);
   color: var(--text-dim);
   font-size: 0.9rem;
   letter-spacing: 2px;
@@ -180,12 +164,12 @@
 
 .tab-btn:hover {
   background-color: #111;
-  color: #fff;
+  color: var(--text-main);
 }
 
 .tab-btn.active {
-  background-color: #fff;
-  color: #000;
+  background-color: var(--text-main);
+  color: var(--bg-app);
   font-weight: bold;
 }
 
@@ -194,22 +178,6 @@
   overflow-y: auto;
   padding: 0;
   position: relative;
-}
-
-.tab-viewport::-webkit-scrollbar {
-  width: 6px;
-}
-
-.tab-viewport::-webkit-scrollbar-track {
-  background: #000;
-}
-
-.tab-viewport::-webkit-scrollbar-thumb {
-  background: var(--text-dim);
-}
-
-.tab-viewport::-webkit-scrollbar-thumb:hover {
-  background: #fff;
 }
 
 /* --- DATA ROWS --- */
@@ -232,7 +200,7 @@
 
 .data-row:hover {
   background-color: #111;
-  color: #fff;
+  color: var(--text-main);
 }
 
 .row-rank, .row-index {
@@ -242,7 +210,7 @@
 }
 
 .row-name {
-  color: #fff;
+  color: var(--text-main);
   letter-spacing: 1px;
   display: flex;
   gap: 10px;
@@ -262,7 +230,7 @@
 }
 
 .is-dead .row-name {
-  color: #888;
+  color: var(--text-muted);
 }
 
 /* --- BADGES --- */
@@ -328,7 +296,7 @@
 /* --- FOOTER --- */
 .results-actions {
   display: flex;
-  border-top: 1px solid var(--text-dim);
+  border-top: 1px solid var(--border-color);
   padding: 1.5rem 2rem;
   gap: 2rem;
 }
@@ -336,9 +304,9 @@
 .results-btn {
   flex: 1;
   padding: 1.2rem;
-  border: 1px solid var(--text-dim);
+  border: 1px solid var(--border-color);
   background: transparent;
-  color: #fff;
+  color: var(--text-main);
   font-size: 1rem;
   letter-spacing: 2px;
   text-transform: uppercase;
@@ -347,9 +315,9 @@
 }
 
 .results-btn:hover {
-  background-color: #fff;
-  color: #000;
-  border-color: #fff;
+  background-color: var(--text-main);
+  color: var(--bg-app);
+  border-color: var(--text-main);
 }
 
 .results-btn.primary {
@@ -359,7 +327,7 @@
 
 .results-btn.primary:hover {
   background-color: var(--accent-red);
-  color: #000;
+  color: var(--bg-app);
 }
 
 /* --- ERROR STATE --- */
