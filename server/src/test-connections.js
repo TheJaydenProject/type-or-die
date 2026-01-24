@@ -11,7 +11,7 @@ async function testRedis() {
   console.log('📍 Testing Redis...');
   const redis = new Redis({
     host: 'localhost',
-    port: 6335, // Your mapped port
+    port: 6379, // Your mapped port
     retryStrategy: (times) => {
       if (times > 3) return null;
       return Math.min(times * 50, 2000);

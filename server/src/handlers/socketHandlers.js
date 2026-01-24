@@ -154,7 +154,7 @@ function setupSocketHandlers(io) {
         await roomManager.updateRoom(roomCode, room);
 
         io.to(roomCode).emit('settings_updated', {
-          settings: room.settings
+          sentenceCount: sentenceCount
         });
 
         console.log(`Settings updated: ${roomCode} -> ${sentenceCount} sentences`);
@@ -301,12 +301,22 @@ function setupSocketHandlers(io) {
             });
 
             if (player.completedSentences === room.settings.sentenceCount) {
+              room.status = 'FINISHED';
+              await roomManager.updateRoom(roomCode, room);
+
+              const sortedPlayers = Object.values(room.players).sort((a, b) => {
+                if (b.completedSentences !== a.completedSentences) {
+                  return b.completedSentences - a.completedSentences;
+                }
+                return b.totalCorrectChars - a.totalCorrectChars;
+              });
+
               io.to(roomCode).emit('game_ended', {
+                reason: 'COMPLETION',
                 winnerId: playerId,
                 winnerNickname: player.nickname,
                 finalStats: room.players
               });
-              room.status = 'FINISHED';
             } else {
               player.sentenceStartTime = Date.now();
               player.remainingTime = 20;
@@ -321,12 +331,26 @@ function setupSocketHandlers(io) {
             sentenceIndex: player.currentSentenceIndex,
             completedSentences: player.completedSentences,
             totalCorrectChars: player.totalCorrectChars,
+            totalTypedChars: player.totalTypedChars,
+            totalMistypes: player.totalMistypes,
             wpm: player.currentSessionWPM,
             status: player.status
           });
         } else {
           player.totalMistypes++;
           await roomManager.updateRoom(roomCode, room);
+
+          io.to(roomCode).emit('player_progress', {
+            playerId: playerId,
+            charIndex: player.currentCharIndex,
+            sentenceIndex: player.currentSentenceIndex,
+            completedSentences: player.completedSentences,
+            totalCorrectChars: player.totalCorrectChars,
+            totalTypedChars: player.totalTypedChars,
+            totalMistypes: player.totalMistypes,
+            wpm: player.currentSessionWPM,
+            status: player.status
+          });
         }
 
       } catch (error) {
@@ -422,13 +446,17 @@ function setupSocketHandlers(io) {
                 return b.totalCorrectChars - a.totalCorrectChars;
               });
 
+              room.status = 'FINISHED';
+              await roomManager.updateRoom(roomCode, room);
+
               io.to(roomCode).emit('game_ended', {
+                reason: 'ALL_DEAD',
                 winnerId: sortedPlayers[0].id,
                 winnerNickname: sortedPlayers[0].nickname,
-                finalStats: room.players,
-                reason: 'ALL_DEAD'
+                finalStats: room.players
               });
-              room.status = 'FINISHED';
+              
+              return;
             }
           }
         }
@@ -510,13 +538,17 @@ function setupSocketHandlers(io) {
               return b.totalCorrectChars - a.totalCorrectChars;
             });
 
+            room.status = 'FINISHED';
+            await roomManager.updateRoom(roomCode, room);
+
             io.to(roomCode).emit('game_ended', {
               winnerId: sortedPlayers[0].id,
               winnerNickname: sortedPlayers[0].nickname,
               finalStats: room.players,
               reason: 'ALL_DEAD'
             });
-            room.status = 'FINISHED';
+            
+            return;
           }
         }
 
@@ -524,6 +556,71 @@ function setupSocketHandlers(io) {
 
       } catch (error) {
         console.error('Timeout error:', error.message);
+      }
+    });
+
+    socket.on('request_replay', async (data) => {
+      try {
+        const { roomCode } = data;
+        const playerId = socket.playerId;
+
+        // Get fresh room data from Redis
+        const room = await roomManager.getRoom(roomCode);
+        if (!room) {
+          console.error('Replay failed: Room not found');
+          return;
+        }
+
+        if (room.hostId !== playerId) {
+          console.error('Replay failed: Not host');
+          return; 
+        }
+
+        console.log(`REPLAY: Resetting room ${roomCode}`);
+
+        // Reset Room State
+        room.status = 'LOBBY';
+        room.sentences = [];
+        room.gameStartedAt = null;
+
+        Object.keys(room.players).forEach(pId => {
+          const p = room.players[pId];
+          
+          console.log(`  → Resetting ${p.nickname}: rouletteOdds ${p.rouletteOdds} → 6`);
+          
+          // Reset ALL fields explicitly
+          p.status = 'ALIVE';
+          p.currentSentenceIndex = 0;
+          p.rouletteOdds = 6;
+          p.mistakeStrikes = 0;
+          p.completedSentences = 0;
+          p.totalCorrectChars = 0;
+          p.totalTypedChars = 0;
+          p.totalMistypes = 0;
+          p.currentCharIndex = 0;
+          p.sentenceStartTime = null;
+          p.remainingTime = 20;
+          p.rouletteHistory = [];
+          p.sentenceHistory = [];
+          p.averageWPM = 0;
+          p.peakWPM = 0;
+          p.currentSessionWPM = 0;
+        });
+
+        await roomManager.updateRoom(roomCode, room);
+        
+        const verifyRoom = await roomManager.getRoom(roomCode);
+        const verifyPlayer = Object.values(verifyRoom.players)[0];
+        console.log(`  ✓ Verified: ${verifyPlayer.nickname} rouletteOdds = ${verifyPlayer.rouletteOdds}`);
+
+        io.to(roomCode).emit('replay_started', {
+          room: verifyRoom
+        });
+
+        console.log(`Replay complete for room: ${roomCode}`);
+
+      } catch (error) {
+        console.error('Replay error:', error.message);
       }
     });
 

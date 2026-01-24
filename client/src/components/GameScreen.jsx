@@ -1,11 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import './GameScreen.css';
 import './RouletteRevolver.css';
+import GameEndScreen from './GameEndScreen';
 
 // Revolver Roulette Component
 function RouletteRevolver({ survived, previousOdds, newOdds, roll }) {
   const [phase, setPhase] = useState('spinning');
   const [currentHighlight, setCurrentHighlight] = useState(null);
+  
   useEffect(() => {
     const cylinderRef = document.querySelector('.revolver-cylinder');
     if (!cylinderRef) return;
@@ -55,9 +57,8 @@ function RouletteRevolver({ survived, previousOdds, newOdds, roll }) {
 
   }, [roll, previousOdds]);
 
-  // Create chambers array
   const chambers = Array.from({ length: previousOdds }, (_, i) => ({
-    isBullet: i === 0, // First chamber is the bullet (roll of 1 = death)
+    isBullet: i === 0,
     index: i
   }));
 
@@ -80,23 +81,20 @@ function RouletteRevolver({ survived, previousOdds, newOdds, roll }) {
               
               const isHighlighted = i === currentHighlight;
               
-              console.log(`Chamber ${i}: angle=${angle}°, x=${x.toFixed(1)}, y=${y.toFixed(1)}, highlighted=${isHighlighted}`);
-              
               return (
-              <div
-                key={i}
-                className={`chamber ${isHighlighted ? 'highlighted' : ''} ${chamber.isBullet ? 'bullet-chamber' : 'empty-chamber'}`}
-                style={{
-                  left: `calc(50% + ${x}px)`,
-                  top: `calc(50% + ${y}px)`
-                }}
-              />
+                <div
+                  key={i}
+                  className={`chamber ${isHighlighted ? 'highlighted' : ''} ${chamber.isBullet ? 'bullet-chamber' : 'empty-chamber'}`}
+                  style={{
+                    left: `calc(50% + ${x}px)`,
+                    top: `calc(50% + ${y}px)`
+                  }}
+                />
               );
             })}
           </div>
         </div>
 
-        {/* Result display */}
         {phase === 'result' && (
           <div className={`revolver-result ${survived ? 'survived' : 'died'}`}>
             <div className="result-text">
@@ -127,6 +125,9 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
   const [rouletteResult, setRouletteResult] = useState(null);
   const [isProcessingError, setIsProcessingError] = useState(false);
   
+  // Ref to track roulette state synchronously to avoid race conditions
+  const rouletteActiveRef = useRef(false);
+
   const currentSentence = sentences[currentSentenceIndex] || '';
   const currentPlayer = players[playerId] || {};
 
@@ -149,7 +150,6 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
     return () => clearInterval(interval);
   }, [status, currentSentenceIndex, socket, room.roomCode]);
 
-  // Keyboard input handler
   useEffect(() => {
     if (status !== 'ALIVE' || isProcessingError) return;
 
@@ -183,7 +183,6 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
           }, 100);
         }
       } else {
-        // Lock input during error processing
         setIsProcessingError(true);
         
         socket.emit('mistype', {
@@ -202,7 +201,6 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
     return () => document.removeEventListener('keydown', handleKeyPress);
   }, [status, isProcessingError, currentCharIndex, currentSentence, currentSentenceIndex, socket, room.roomCode, sentences.length]);
 
-  // Socket event listeners
   useEffect(() => {
     const handlePlayerProgress = (data) => {
       setPlayers(prev => ({
@@ -213,6 +211,8 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
           currentSentenceIndex: data.sentenceIndex,
           completedSentences: data.completedSentences,
           totalCorrectChars: data.totalCorrectChars,
+          totalTypedChars: data.totalTypedChars,
+          totalMistypes: data.totalMistypes,
           averageWPM: data.wpm,
           status: data.status
         }
@@ -231,6 +231,7 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
       if (data.playerId === playerId) {
         setMistypeFlash(true);
         setFlashKey(prev => prev + 1);
+        setRemainingTime(20);
         setTimeout(() => {
           setMistypeFlash(false);
         }, 300);
@@ -247,8 +248,15 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
       if (data.playerId === playerId) {
         console.log('🎰 Roulette result:', data.survived ? 'SURVIVED' : 'DIED');
         
+        // Update synchronous Ref immediately
+        rouletteActiveRef.current = true;
+        
         setShowRoulette(true);
         setRouletteResult(data);
+
+        if (!data.survived) {
+          setStatus('DEAD');
+        }
         
         setPlayers(prev => ({
           ...prev,
@@ -260,16 +268,14 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
         }));
         
         setTimeout(() => {
-          console.log('🎰 Hiding roulette overlay');
           setShowRoulette(false);
           setRouletteResult(null);
+          rouletteActiveRef.current = false;
           
           if (data.survived) {
             setCurrentCharIndex(0);
             setRemainingTime(20);
             setIsProcessingError(false);
-          } else {
-            setStatus('DEAD');
           }
         }, 4500);
       } else {
@@ -308,16 +314,12 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
       }));
     };
 
-    const handleGameEnded = (data) => {
-      console.log('Game ended:', data);
-    };
 
     socket.on('player_progress', handlePlayerProgress);
     socket.on('player_strike', handlePlayerStrike);
     socket.on('roulette_result', handleRouletteResult);
     socket.on('player_died', handlePlayerDied);
     socket.on('sentence_completed', handleSentenceCompleted);
-    socket.on('game_ended', handleGameEnded);
 
     return () => {
       socket.off('player_progress', handlePlayerProgress);
@@ -325,9 +327,8 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
       socket.off('roulette_result', handleRouletteResult);
       socket.off('player_died', handlePlayerDied);
       socket.off('sentence_completed', handleSentenceCompleted);
-      socket.off('game_ended', handleGameEnded);
     };
-  }, [socket, playerId]);
+  }, [socket, playerId, showRoulette, status]); 
 
   const sortedPlayers = Object.values(players).sort((a, b) => {
     if (a.status === 'ALIVE' && b.status !== 'ALIVE') return -1;
@@ -351,19 +352,6 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
 
       <div className="terminal-header">
         <span className="term-label">SENTENCE {currentSentenceIndex + 1}/{sentences.length}</span>
-        <div className="strikes-container">
-          {[0, 1, 2].map(i => (
-            <span 
-              key={i} 
-              className={`strike-box ${i < (currentPlayer.mistakeStrikes || 0) ? 'crossed' : ''} ${mistypeFlash && i === (currentPlayer.mistakeStrikes || 0) - 1 ? 'flash-strike' : ''}`}
-            >
-              {i < (currentPlayer.mistakeStrikes || 0) ? '☒' : '☐'}
-            </span>
-          ))}
-        </div>
-        <span className={`term-timer ${remainingTime < 5 ? 'critical' : ''}`}>
-          {remainingTime.toFixed(1)}S
-        </span>
         <button onClick={onLeave} className="term-btn">EXIT</button>
       </div>
 
@@ -378,6 +366,23 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
               </div>
             </div>
           )}
+
+          <div className="game-status-bar">
+            <div className="strikes-container">
+              {[0, 1, 2].map(i => (
+                <span 
+                  key={i} 
+                  className={`strike-box ${i < (currentPlayer.mistakeStrikes || 0) ? 'crossed' : ''} ${mistypeFlash && i === (currentPlayer.mistakeStrikes || 0) - 1 ? 'flash-strike' : ''}`}
+                >
+                  {i < (currentPlayer.mistakeStrikes || 0) ? '☒' : '☐'}
+                </span>
+              ))}
+            </div>
+            
+            <span className={`term-timer ${remainingTime < 5 ? 'critical' : ''}`}>
+              {remainingTime.toFixed(1)}S
+            </span>
+          </div>
 
           <div className="scrolling-sentences">
             {currentSentenceIndex > 0 && (
@@ -446,8 +451,8 @@ function GameScreen({ socket, room, playerId, sentences, onLeave }) {
                 ? ((currentPlayer.totalCorrectChars / currentPlayer.totalTypedChars) * 100).toFixed(1) 
                 : 100}%
             </div>
-            <div className="stats-line">HIT: {currentPlayer.totalCorrectChars}</div>
-            <div className="stats-line">ERR: {currentPlayer.totalMistypes}</div>
+            <div className="stats-line">HIT: {currentPlayer.totalCorrectChars || 0}</div>
+            <div className="stats-line">ERR: {currentPlayer.totalMistypes || 0}</div>
           </div>
         </div>
       </div>

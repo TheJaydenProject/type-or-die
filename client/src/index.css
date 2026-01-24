@@ -1,13 +1,24 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
 
 :root {
-  --bg-color: #000000;
-  --panel-bg: #0a0a0a;
+  /* --- COLOR PALETTE --- */
+  --bg-app: #000000;
+  --bg-panel: #050505;
+  --bg-overlay: rgba(0, 0, 0, 0.95);
+
   --accent-red: #ff0000;
-  --accent-input: #888888;
-  --text-main: #e0e0e0;
+  --accent-dim: #4a0000;
+  
+  --text-main: #ffffff;
+  --text-muted: #888888;
   --text-dim: #444444;
+  
+  --border-color: #333333;
+  --border-active: #ffffff;
+  
   --border-weight: 1px;
+  --glow-red: 0 0 10px rgba(255, 0, 0, 0.5);
+  --glow-text: 0 0 5px rgba(255, 255, 255, 0.5);
 }
 
 * {
@@ -18,13 +29,14 @@
 }
 
 body {
-  background-color: var(--bg-color);
+  background-color: var(--bg-app);
   color: var(--text-main);
   font-family: 'Space Mono', 'Courier New', monospace;
   overflow-x: hidden;
   cursor: default;
 }
 
+/* Global Grid Overlay */
 body::before {
   content: "";
   position: fixed;
@@ -34,13 +46,14 @@ body::before {
   height: 100%;
   background: repeating-linear-gradient(
     0deg,
-    rgba(0, 0, 0, 0.15),
-    rgba(0, 0, 0, 0.15) 1px,
+    rgba(255, 255, 255, 0.03),
+    rgba(255, 255, 255, 0.03) 1px,
     transparent 1px,
-    transparent 2px
+    transparent 20px
   );
   pointer-events: none;
   z-index: 9999;
+  opacity: 0.5;
 }
 
 button, input {
@@ -51,19 +64,24 @@ button, input {
   color: inherit;
 }
 
-button {
-  cursor: crosshair;
-}
-
-input {
-  cursor: text;
-}
+button { cursor: crosshair; }
+input { cursor: text; }
 
 ::selection {
   background: var(--accent-red);
   color: #000;
 }
 
-* {
-  scroll-behavior: auto !important;
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-app);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-red);
 }

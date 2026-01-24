@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
 import GameScreen from './components/GameScreen';
+import GameEndScreen from './components/GameEndScreen';
 import './App.css';
 
 const socket = io('http://localhost:3000');
@@ -17,6 +18,23 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [countdown, setCountdown] = useState(null);
   const [sentences, setSentences] = useState([]);
+  const [gameEndData, setGameEndData] = useState(null);
+
+  useEffect(() => {
+    const handleGameEnded = (data) => {
+      setGameEndData(data);
+      
+      setTimeout(() => {
+        setView('FINISHED');
+      }, 6200);
+    };
+
+    socket.on('game_ended', handleGameEnded);
+
+    return () => {
+      socket.off('game_ended', handleGameEnded);
+    };
+  }, []);
 
   useEffect(() => {
     socket.on('connect', () => {
@@ -27,6 +45,19 @@ function App() {
     socket.on('disconnect', () => {
       console.log('CONNECTION TERMINATED');
       setConnected(false);
+    });
+
+    socket.on('settings_updated', (data) => {
+      console.log('SETTINGS_UPDATED:', data);
+      if (currentRoom) {
+        setCurrentRoom({
+          ...currentRoom,
+          settings: {
+            ...currentRoom.settings,
+            sentenceCount: data.sentenceCount
+          }
+        });
+      }
     });
 
     socket.on('player_joined', (data) => {
@@ -68,7 +99,6 @@ function App() {
       setCountdown(3);
       setView('COUNTDOWN');
       
-      // Countdown timer
       let count = 3;
       const interval = setInterval(() => {
         count--;
@@ -85,22 +115,29 @@ function App() {
       setCountdown(null);
     });
 
+    socket.on('replay_started', (data) => {
+      console.log('REPLAY INITIATED');
+      setCurrentRoom(data.room);
+      setGameEndData(null);
+      setView('LOBBY');
+    });
+
     return () => {
       socket.off('connect');
       socket.off('disconnect');
+      socket.off('settings_updated');
       socket.off('player_joined');
       socket.off('player_left');
       socket.off('host_migrated');
-      socket.off('settings_updated');
       socket.off('countdown_start');
       socket.off('game_start');
+      socket.off('replay_started');
     };
   }, [currentRoom]);
 
   useEffect(() => {
     const savedSession = localStorage.getItem('type_or_die_session');
     
-    // Only attempt if we have a saved session and a live socket connection
     if (savedSession && connected && view === 'MENU') {
       const { playerId, roomCode } = JSON.parse(savedSession);
       
@@ -206,6 +243,14 @@ function App() {
 
   const handleChangeSentences = (value) => {
     if (currentRoom && currentRoom.hostId === playerId) {
+      setCurrentRoom({
+        ...currentRoom,
+        settings: {
+          ...currentRoom.settings,
+          sentenceCount: value
+        }
+      });
+
       socket.emit('change_settings', {
         roomCode: currentRoom.roomCode,
         sentenceCount: value
@@ -237,7 +282,6 @@ function App() {
     }
   };
 
-  // MENU VIEW
   if (view === 'MENU') {
     return (
       <div className="app">
@@ -316,7 +360,6 @@ function App() {
     );
   }
 
-  // LOBBY VIEW
   if (view === 'LOBBY' && currentRoom) {
     const isHost = currentRoom.hostId === playerId;
     const players = Object.values(currentRoom.players);
@@ -341,13 +384,13 @@ function App() {
           <div className="settings-section">
             <h2>PARAMETERS</h2>
             <div className="form-section">
-              <label>SENTENCES: {currentRoom.settings.sentenceCount}</label>
+              <label>SENTENCE COUNT: {currentRoom.settings?.sentenceCount ?? 50}</label>
               <input
                 type="range"
                 min="10"
                 max="100"
                 step="10"
-                value={currentRoom.settings.sentenceCount}
+                value={currentRoom.settings?.sentenceCount ?? 50}
                 onChange={(e) => handleChangeSentences(parseInt(e.target.value))}
                 disabled={!isHost}
                 className="slider"
@@ -391,7 +434,6 @@ function App() {
     );
   }
 
-  // COUNTDOWN VIEW
   if (view === 'COUNTDOWN') {
     return (
       <div className="app">
@@ -407,7 +449,6 @@ function App() {
     );
   }
 
-  // GAME VIEW (Placeholder for now)
   if (view === 'GAME' && currentRoom) {
     return (
       <GameScreen
@@ -416,6 +457,29 @@ function App() {
         playerId={playerId}
         sentences={sentences}
         onLeave={handleLeaveRoom}
+      />
+    );
+  }
+
+  if (view === 'FINISHED' && gameEndData) {
+    console.log('🎨 Rendering GameEndScreen with:', {
+      gameEndData,
+      currentRoom,
+      playerId
+    });
+    
+    return (
+      <GameEndScreen
+        gameEndData={gameEndData}
+        room={currentRoom}
+        playerId={playerId}
+        onMainMenu={() => {
+          localStorage.removeItem('type_or_die_session');
+          setView('MENU');
+        }}
+        onReplay={() => {
+          setView('LOBBY');
+        }}
       />
     );
   }

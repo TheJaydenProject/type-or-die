@@ -12,13 +12,19 @@
 }
 
 @keyframes pulse-critical {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%, 100% { 
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% { 
+    opacity: 0.7;
+    transform: scale(1.05);
+  }
 }
 
-@keyframes blink-border {
-  0%, 49% { border-bottom-color: #ff0000; }
-  50%, 100% { border-bottom-color: transparent; }
+@keyframes cursor-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
 }
 
 @keyframes strike-flash {
@@ -114,37 +120,41 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem 2rem;
-  border-bottom: 1px solid #222;
+  padding: 1.5rem 2rem;
+  border-bottom: 2px solid #222;
 }
 
 .term-label {
-  font-size: 0.85rem;
-  letter-spacing: 2px;
-  color: #555;
+  font-size: 1.1rem;
+  letter-spacing: 3px;
+  color: #666;
+  font-weight: bold;
 }
 
 .term-timer {
-  font-size: 1.8rem;
-  letter-spacing: 3px;
+  font-size: 3rem;
+  letter-spacing: 4px;
   color: #fff;
   font-variant-numeric: tabular-nums;
+  font-weight: bold;
+  transition: all 0.2s;
 }
 
 .term-timer.critical {
   color: #ff0000;
   animation: pulse-critical 0.5s infinite;
+  text-shadow: 0 0 20px #ff0000;
 }
 
 .strikes-container {
   display: flex;
-  gap: 0.8rem;
+  gap: 1.2rem;
   align-items: center;
 }
 
 .strike-box {
-  font-size: 2rem;
-  color: #666;
+  font-size: 3rem;
+  color: #333;
   font-weight: bold;
   transition: all 0.2s;
 }
@@ -152,7 +162,7 @@
 .strike-box.crossed {
   color: #ff0000;
   animation: strike-flash 0.5s ease-out;
-  text-shadow: 0 0 10px #ff0000;
+  text-shadow: 0 0 15px #ff0000;
 }
 
 .strike-box.flash-strike {
@@ -160,19 +170,21 @@
 }
 
 .term-btn {
-  padding: 0.5rem 1.5rem;
+  padding: 0.8rem 2rem;
   background: transparent;
-  border: 1px solid #444;
+  border: 2px solid #444;
   color: #888;
-  font-size: 0.8rem;
-  letter-spacing: 2px;
+  font-size: 1rem;
+  letter-spacing: 3px;
   cursor: crosshair;
   transition: all 0.1s;
+  font-weight: bold;
 }
 
 .term-btn:hover {
   border-color: #ff0000;
   color: #ff0000;
+  box-shadow: 0 0 10px rgba(255, 0, 0, 0.3);
 }
 
 /* ============================================
@@ -183,10 +195,21 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
   align-items: center;
-  padding: 2rem;
-  border-right: 1px solid #222;
+  padding: 3rem 2rem;
+  border-right: 2px solid #222;
+}
+
+.game-status-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 90%;
+  max-width: 900px;
+  margin-bottom: 3rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 2px solid #333;
 }
 
 .death-screen {
@@ -195,8 +218,8 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.9);
-  border: 3px solid #ff0000;
+  background: rgba(0, 0, 0, 0.95);
+  border: 4px solid #ff0000;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -205,32 +228,35 @@
 
 .death-text {
   text-align: center;
-  font-size: 2.5rem;
-  letter-spacing: 6px;
+  font-size: 3.5rem;
+  letter-spacing: 8px;
   color: #ff0000;
-  line-height: 1.8;
+  line-height: 2;
   text-transform: uppercase;
+  font-weight: bold;
+  text-shadow: 0 0 20px #ff0000;
 }
 
 .death-sub {
-  font-size: 1rem;
-  color: #666;
-  margin-top: 1rem;
+  font-size: 1.5rem;
+  color: #888;
+  margin-top: 2rem;
+  letter-spacing: 4px;
 }
 
 .scrolling-sentences {
   display: flex;
   flex-direction: column;
-  gap: 2rem;
+  gap: 3rem;
   align-items: center;
   max-width: 90%;
   padding: 2rem 0;
 }
 
 .sentence-row {
-  font-size: 2rem;
-  line-height: 1.5;
-  letter-spacing: 2px;
+  font-size: 2.2rem;
+  line-height: 2;
+  letter-spacing: 3px;
   text-align: center;
   white-space: pre-wrap;
   word-break: keep-all;
@@ -240,14 +266,15 @@
 
 .sentence-prev,
 .sentence-next {
-  color: #666;
-  font-size: 1.4rem;
-  opacity: 0.6;
+  color: #444;
+  font-size: 1.6rem;
+  opacity: 0.5;
 }
 
 .sentence-current {
   color: #fff;
-  font-size: 2.5rem;
+  font-size: 3rem;
+  font-weight: 500;
 }
 
 .char-done {
@@ -261,8 +288,20 @@
 }
 
 .char-pending.char-current {
-  border-bottom: 3px solid #ff0000;
-  animation: blink-border 0.7s infinite;
+  color: #555;
+  position: relative;
+  display: inline-block;
+}
+
+.char-pending.char-current::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 2px;
+  height: 5px;
+  background-color: #ff0000;
+  animation: cursor-blink 1s infinite;
 }
 
 .cursor-blink {
@@ -270,11 +309,12 @@
 }
 
 .typing-status {
-  margin-top: 3rem;
-  font-size: 0.85rem;
-  letter-spacing: 3px;
-  color: #444;
+  margin-top: 4rem;
+  font-size: 1.2rem;
+  letter-spacing: 4px;
+  color: #555;
   text-transform: uppercase;
+  font-weight: bold;
 }
 
 /* ============================================
@@ -284,18 +324,20 @@
 .leaderboard-zone {
   display: flex;
   flex-direction: column;
-  padding: 2rem;
+  padding: 2.5rem;
   overflow: hidden;
+  background: rgba(10, 10, 10, 0.5);
 }
 
 .lb-header {
-  font-size: 0.9rem;
-  letter-spacing: 3px;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid #222;
-  margin-bottom: 1rem;
-  color: #666;
+  font-size: 1.3rem;
+  letter-spacing: 4px;
+  padding-bottom: 1.5rem;
+  border-bottom: 2px solid #333;
+  margin-bottom: 1.5rem;
+  color: #888;
   text-transform: uppercase;
+  font-weight: bold;
 }
 
 .lb-list {
@@ -305,7 +347,7 @@
 }
 
 .lb-list::-webkit-scrollbar {
-  width: 3px;
+  width: 4px;
 }
 
 .lb-list::-webkit-scrollbar-track {
@@ -313,46 +355,51 @@
 }
 
 .lb-list::-webkit-scrollbar-thumb {
-  background: #222;
-}
-
-.lb-list::-webkit-scrollbar-thumb:hover {
   background: #333;
 }
 
+.lb-list::-webkit-scrollbar-thumb:hover {
+  background: #444;
+}
+
 .lb-entry {
-  padding: 1rem;
-  border: 1px solid #1a1a1a;
-  margin-bottom: 0.5rem;
-  background: rgba(0, 0, 0, 0.5);
-  transition: border-color 0.1s;
+  padding: 1.5rem;
+  border: 2px solid #222;
+  margin-bottom: 0.8rem;
+  background: rgba(0, 0, 0, 0.7);
+  transition: all 0.2s;
 }
 
 .lb-entry:hover {
-  border-color: #333;
+  border-color: #444;
+  background: rgba(20, 20, 20, 0.7);
 }
 
 .lb-you {
   border-color: #ff0000;
+  background: rgba(255, 0, 0, 0.05);
+  box-shadow: 0 0 15px rgba(255, 0, 0, 0.2);
 }
 
 .lb-dead {
-  opacity: 0.3;
+  opacity: 0.4;
   border-color: #111;
 }
 
 .lb-rank {
-  font-size: 0.85rem;
+  font-size: 1.2rem;
   letter-spacing: 2px;
-  margin-bottom: 0.5rem;
-  color: #888;
+  margin-bottom: 0.8rem;
+  color: #aaa;
+  font-weight: bold;
 }
 
 .lb-bar {
-  height: 3px;
-  background: #111;
-  margin-bottom: 0.5rem;
+  height: 5px;
+  background: #1a1a1a;
+  margin-bottom: 0.8rem;
   position: relative;
+  border: 1px solid #222;
 }
 
 .lb-fill {
@@ -361,16 +408,24 @@
   top: 0;
   height: 100%;
   background: #ff0000;
-  transition: width 0.2s;
+  transition: width 0.3s;
+  box-shadow: 0 0 10px rgba(255, 0, 0, 0.5);
 }
 
 .lb-stats {
   display: flex;
   justify-content: space-between;
-  font-size: 0.7rem;
-  color: #666;
-  letter-spacing: 1px;
+  font-size: 1rem;
+  color: #888;
+  letter-spacing: 2px;
   font-variant-numeric: tabular-nums;
+  font-weight: bold;
+}
+
+.lb-stats span {
+  padding: 0.3rem 0.5rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid #222;
 }
 
 /* ============================================
@@ -378,22 +433,32 @@
    ============================================ */
 
 .stats-panel {
-  border-top: 1px solid #222;
-  padding-top: 1rem;
+  border-top: 2px solid #333;
+  padding-top: 1.5rem;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 1.5rem;
 }
 
 .stats-header {
-  font-size: 0.85rem;
-  letter-spacing: 2px;
-  margin-bottom: 0.5rem;
-  color: #555;
+  font-size: 1.1rem;
+  letter-spacing: 3px;
+  margin-bottom: 1rem;
+  color: #666;
   text-transform: uppercase;
+  font-weight: bold;
 }
 
 .stats-line {
-  font-size: 0.8rem;
+  font-size: 1.1rem;
   letter-spacing: 2px;
-  margin-bottom: 0.3rem;
-  color: #aaa;
+  margin-bottom: 0.6rem;
+  color: #bbb;
   font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #1a1a1a;
+}
+
+.stats-line:last-child {
+  border-bottom: none;
 }

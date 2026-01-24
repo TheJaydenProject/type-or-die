@@ -9,7 +9,6 @@
   position: relative;
 }
 
-/* Terminal glitch effect overlay */
 .app::after {
   content: "";
   position: fixed;
@@ -37,12 +36,11 @@
 .container {
   background: var(--panel-bg);
   border: var(--border-weight) solid var(--text-dim);
-  padding: 2rem;
+  padding: 3rem;
   max-width: 650px;
-  width: 90%;
+  width: 80%;
   position: relative;
   box-shadow: 0 0 20px rgba(255, 0, 0, 0.05);
-  transform: scale(0.9);
 }
 
 .container::before {
@@ -50,7 +48,7 @@
   position: absolute;
   top: -20px;
   left: 0;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--accent-red);
   letter-spacing: 2px;
 }
@@ -58,33 +56,36 @@
 /* ===== TYPOGRAPHY ===== */
 
 h1 {
-  font-size: 3.5rem;
+  font-size: 4rem;
   color: var(--accent-red);
   margin-bottom: 0.5rem;
   border-bottom: 4px solid var(--accent-red);
   display: inline-block;
   text-shadow: 2px 2px 0 rgba(255, 0, 0, 0.3);
+  font-weight: 900;
 }
 
 h2 {
   color: var(--text-dim);
-  font-size: 1.2rem;
+  font-size: 1.3rem;
   margin-bottom: 1.5rem;
   border-bottom: 1px solid var(--text-dim);
   padding-bottom: 0.5rem;
   letter-spacing: 2px;
+  font-weight: bold;
 }
 
 .tagline {
   color: var(--text-dim);
-  font-size: 1rem;
+  font-size: 1.1rem;
   margin-bottom: 2rem;
   letter-spacing: 3px;
+  font-weight: bold;
 }
 
 .note {
   color: var(--text-dim);
-  font-size: 0.75rem;
+  font-size: 0.85rem;
   margin-top: 1rem;
   letter-spacing: 1px;
   text-align: center;
@@ -94,20 +95,23 @@ h2 {
 
 .status {
   border: 1px solid var(--text-dim);
-  padding: 0.8rem;
+  padding: 1rem;
   margin-bottom: 2rem;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   letter-spacing: 1px;
+  font-weight: bold;
 }
 
 .error {
   background: rgba(255, 0, 0, 0.1);
   border: 1px solid var(--accent-red);
   color: var(--accent-red);
-  padding: 1rem;
+  padding: 1.2rem;
   margin-bottom: 2rem;
   letter-spacing: 1px;
   animation: flash 0.5s;
+  font-size: 0.95rem;
+  font-weight: bold;
 }
 
 @keyframes flash {
@@ -118,26 +122,28 @@ h2 {
 /* ===== FORMS ===== */
 
 .form-section {
-  margin-bottom: 1.5rem;
+  margin-bottom: 2rem;
 }
 
 .form-section label {
   display: block;
   color: var(--text-dim);
-  margin-bottom: 0.5rem;
-  font-size: 0.85rem;
+  margin-bottom: 0.8rem;
+  font-size: 0.95rem;
   letter-spacing: 2px;
+  font-weight: bold;
 }
 
 .input {
   background: transparent;
   border: 1px solid var(--text-dim);
-  padding: 1rem;
+  padding: 1.2rem;
   color: var(--accent-input);
-  font-size: 1.2rem;
+  font-size: 1.3rem;
   width: 100%;
   letter-spacing: 2px;
   transition: border-color 0.1s;
+  font-weight: bold;
 }
 
 .input:focus {
@@ -161,25 +167,25 @@ h2 {
 .slider {
   -webkit-appearance: none;
   width: 100%;
-  height: 2px;
+  height: 3px;
   background: var(--text-dim);
   outline: none;
-  margin: 1rem 0;
+  margin: 1.2rem 0;
 }
 
 .slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   background: var(--accent-red);
   cursor: crosshair;
   border: 2px solid var(--accent-red);
 }
 
 .slider::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   background: var(--accent-red);
   cursor: crosshair;
   border: 2px solid var(--accent-red);
@@ -195,9 +201,10 @@ h2 {
   display: flex;
   justify-content: space-between;
   color: var(--text-dim);
-  font-size: 0.75rem;
+  font-size: 0.85rem;
   letter-spacing: 1px;
   margin-top: -0.5rem;
+  font-weight: bold;
 }
 
 /* ===== BUTTONS ===== */
@@ -206,7 +213,7 @@ h2 {
 .btn-secondary,
 .btn-back,
 .btn-copy {
-  padding: 1.2rem;
+  padding: 1.3rem;
   font-size: 1rem;
   font-weight: 900;
   letter-spacing: 3px;
@@ -246,11 +253,11 @@ h2 {
 
 .btn-back {
   width: auto;
-  padding: 0.8rem 1.5rem;
+  padding: 1rem 2rem;
   background: transparent;
   border: 1px solid var(--accent-red);
   color: var(--accent-red);
-  font-size: 0.85rem;
+  font-size: 0.95rem;
 }
 
 .btn-back:hover {
@@ -260,11 +267,11 @@ h2 {
 
 .btn-copy {
   width: auto;
-  padding: 0.6rem 1.2rem;
+  padding: 0.8rem 1.5rem;
   background: transparent;
   border: 1px solid var(--text-dim);
   color: var(--text-dim);
-  font-size: 0.75rem;
+  font-size: 0.85rem;
   margin-left: 1rem;
 }
 
@@ -283,10 +290,11 @@ button:disabled {
 .divider {
   text-align: center;
   color: var(--text-dim);
-  margin: 2rem 0;
+  margin: 2.5rem 0;
   position: relative;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   letter-spacing: 3px;
+  font-weight: bold;
 }
 
 .divider::before,
@@ -321,20 +329,21 @@ button:disabled {
 .room-code-display {
   display: flex;
   align-items: center;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   letter-spacing: 2px;
+  font-weight: bold;
 }
 
 .room-code-display strong {
   color: var(--accent-red);
-  font-size: 1.5rem;
+  font-size: 1.6rem;
   margin: 0 1rem;
   letter-spacing: 4px;
 }
 
 .settings-section,
 .players-section {
-  margin: 2rem 0;
+  margin: 2.5rem 0;
 }
 
 .player-list {
@@ -343,13 +352,14 @@ button:disabled {
 }
 
 .player-item {
-  padding: 1rem;
+  padding: 1.2rem;
   border-bottom: 1px solid var(--text-dim);
   color: var(--text-main);
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   letter-spacing: 1px;
   background: transparent;
   transition: background 0.1s;
+  font-weight: bold;
 }
 
 .player-item:last-child {
@@ -382,10 +392,11 @@ button:disabled {
 }
 
 .countdown-text {
-  font-size: 1.5rem;
+  font-size: 1.6rem;
   color: var(--text-dim);
   letter-spacing: 4px;
   animation: blink 0.5s infinite;
+  font-weight: bold;
 }
 
 @keyframes countdown-pulse {
@@ -399,6 +410,47 @@ button:disabled {
   100% {
     transform: scale(1);
     opacity: 1;
+  }
+}
+
+/* ===== RESPONSIVE SCALING ===== */
+
+@media (max-width: 768px) {
+  .container {
+    padding: 2rem;
+    width: 95%;
+  }
+  
+  h1 {
+    font-size: 3rem;
+  }
+  
+  .input {
+    font-size: 1.1rem;
+  }
+  
+  .btn-primary,
+  .btn-secondary {
+    font-size: 0.95rem;
+  }
+  
+  .countdown-number {
+    font-size: 8rem;
+  }
+}
+
+@media (min-width: 1400px) {
+  .container {
+    max-width: 850px;
+    padding: 3.5rem;
+  }
+  
+  h1 {
+    font-size: 4.5rem;
+  }
+  
+  .input {
+    font-size: 1.4rem;
   }
 }
 
