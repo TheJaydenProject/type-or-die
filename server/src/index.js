@@ -82,6 +82,16 @@ app.get('/api/stats', async (req, res) => {
   }
 });
 
+app.get('/api/metrics', async (req, res) => {
+  const roomManager = require('./services/roomManager');
+  try {
+    const metrics = await roomManager.getMetrics();
+    res.json(metrics);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch metrics' });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`\n${'='.repeat(50)}`);

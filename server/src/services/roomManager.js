@@ -8,7 +8,7 @@ class RoomManager {
     this.LOCK_PREFIX = 'lock:room:';
     this.GLOBAL_ROOM_COUNT = 'global:room_count';
     this.MAX_ROOMS_PER_IP = 2;
-    this.MAX_GLOBAL_ROOMS = 100;
+    this.MAX_GLOBAL_ROOMS = 2000;
     this.ROOM_TTL = 86400;
     this.LOCK_TTL = 5;
     this.LOCK_RETRY_ATTEMPTS = 3;
@@ -19,6 +19,7 @@ class RoomManager {
     this.playerEventCounts = new Map();
     
     setInterval(() => this.cleanupRateLimitData(), 60000);
+    setInterval(() => this.cleanupInactiveRooms(), 300000);
   }
 
   async acquireLock(roomCode) {
@@ -105,6 +106,63 @@ class RoomManager {
         this.playerEventCounts.delete(playerId);
       }
     }
+  }
+
+  async cleanupInactiveRooms() {
+    try {
+      const pattern = `${this.ROOM_PREFIX}*`;
+      const keys = await redis.keys(pattern);
+      const now = Date.now();
+      const INACTIVE_THRESHOLD = 3600000;
+      let cleaned = 0;
+
+      for (const key of keys) {
+        const roomData = await redis.get(key);
+        if (!roomData) continue;
+
+        const room = JSON.parse(roomData);
+        const inactiveDuration = now - (room.lastActivity || room.createdAt);
+
+        if (inactiveDuration > INACTIVE_THRESHOLD) {
+          const roomCode = key.replace(this.ROOM_PREFIX, '');
+          await this.deleteRoom(roomCode);
+          cleaned++;
+        }
+      }
+
+      if (cleaned > 0) {
+        console.log(`Cleaned ${cleaned} inactive rooms`);
+      }
+    } catch (error) {
+      console.error('Cleanup error:', error.message);
+    }
+  }
+
+  async getMetrics() {
+    const roomCount = await redis.get(this.GLOBAL_ROOM_COUNT) || 0;
+    const pattern = `${this.ROOM_PREFIX}*`;
+    const keys = await redis.keys(pattern);
+    
+    let totalPlayers = 0;
+    let activeGames = 0;
+    
+    for (const key of keys) {
+      const roomData = await redis.get(key);
+      if (!roomData) continue;
+      
+      const room = JSON.parse(roomData);
+      totalPlayers += Object.keys(room.players).length;
+      if (room.status === 'PLAYING') activeGames++;
+    }
+
+    return {
+      totalRooms: parseInt(roomCount),
+      activeRooms: keys.length,
+      totalPlayers,
+      activeGames,
+      rateLimitedPlayers: this.playerEventCounts.size,
+      timestamp: Date.now()
+    };
   }
 
   sanitizeNickname(nickname) {
