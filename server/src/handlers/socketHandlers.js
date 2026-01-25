@@ -9,6 +9,8 @@ function setupSocketHandlers(io) {
 
     socket.on('create_room', async (data, callback) => {
       try {
+        roomManager.validateEventData('create_room', data);
+
         const { nickname, settings } = data;
         const ipAddress = socket.handshake.address;
         const playerId = uuidv4();
@@ -53,6 +55,8 @@ function setupSocketHandlers(io) {
 
     socket.on('join_room', async (data, callback) => {
       try {
+        roomManager.validateEventData('join_room', data);
+        
         const { roomCode, nickname } = data;
         const ipAddress = socket.handshake.address;
         const playerId = uuidv4();
@@ -399,11 +403,13 @@ function setupSocketHandlers(io) {
         callback({ success: false, error: error.message });
       }
     });
-    
+
     socket.on('char_typed', async (data) => {
       try {
-        const { roomCode, char, charIndex } = data;
         const playerId = socket.playerId;
+        if (!roomManager.checkEventRateLimit(playerId)) return;
+        roomManager.validateEventData('char_typed', data);
+        const { roomCode, char, charIndex } = data;
 
         const room = await roomManager.getRoom(roomCode);
         if (!room || room.status !== 'PLAYING') return;
@@ -554,8 +560,11 @@ function setupSocketHandlers(io) {
 
     socket.on('mistype', async (data) => {
       try {
-        const { roomCode, sentenceIndex } = data;
         const playerId = socket.playerId;
+        if (!roomManager.checkEventRateLimit(playerId)) return;
+        roomManager.validateEventData('mistype', data);
+        
+        const { roomCode, sentenceIndex } = data;
 
         const room = await roomManager.getRoom(roomCode);
         if (!room || room.status !== 'PLAYING') return;
@@ -665,8 +674,11 @@ function setupSocketHandlers(io) {
 
     socket.on('sentence_timeout', async (data) => {
       try {
-        const { roomCode, sentenceIndex } = data;
         const playerId = socket.playerId;
+        if (!roomManager.checkEventRateLimit(playerId)) return;
+        roomManager.validateEventData('sentence_timeout', data);
+        
+        const { roomCode, sentenceIndex } = data;
 
         const room = await roomManager.getRoom(roomCode);
         if (!room || room.status !== 'PLAYING') return;
