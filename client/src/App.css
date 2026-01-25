@@ -5,7 +5,7 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 20px;
+  padding: 30px;
   position: relative;
 }
 
@@ -36,7 +36,7 @@
 .container {
   background: var(--bg-panel);
   border: var(--border-weight) solid var(--border-color);
-  padding: 3rem;
+  padding: 3rem 3rem 2.5rem 3rem;
   max-width: 650px;
   width: 80%;
   position: relative;
@@ -46,7 +46,7 @@
 .container::before {
   content: "SYSTEM_STATUS: ACTIVE";
   position: absolute;
-  top: -20px;
+  top: -25px;
   left: 0;
   font-size: 11px;
   color: var(--accent-red);
@@ -124,7 +124,7 @@ h2 {
 /* ===== FORMS ===== */
 
 .form-section {
-  margin-bottom: 2rem;
+  margin-bottom: 3rem;
 }
 
 .form-section label {
@@ -206,10 +206,9 @@ h2 {
 
 /* ===== BUTTONS ===== */
 
+/* 1. Main Action Buttons */
 .btn-primary,
-.btn-secondary,
-.btn-back,
-.btn-copy {
+.btn-secondary {
   padding: 1.3rem;
   font-size: 1rem;
   font-weight: 900;
@@ -248,13 +247,24 @@ h2 {
   color: var(--text-main);
 }
 
-.btn-back {
+/* 2. Utility Buttons (Shared Base) */
+.btn-back,
+.btn-copy {
   width: auto;
-  padding: 1rem 2rem;
+  padding: 1rem 1.6rem;
   background: transparent;
-  border: 1px solid var(--accent-red);
+  font-size: 1.1rem;
+  font-weight: 900;
+  letter-spacing: 2px;
+  cursor: crosshair;
+  transition: all 0.1s;
+  text-transform: uppercase;
+  border: 1px solid;
+}
+
+.btn-back {
+  border-color: var(--accent-red);
   color: var(--accent-red);
-  font-size: 0.95rem;
 }
 
 .btn-back:hover {
@@ -263,12 +273,8 @@ h2 {
 }
 
 .btn-copy {
-  width: auto;
-  padding: 0.8rem 1.5rem;
-  background: transparent;
-  border: 1px solid var(--border-color);
+  border-color: var(--border-color);
   color: var(--text-dim);
-  font-size: 0.85rem;
   margin-left: 1rem;
 }
 
@@ -287,7 +293,7 @@ button:disabled {
 .divider {
   text-align: center;
   color: var(--text-dim);
-  margin: 2.5rem 0;
+  margin: 2rem 0; 
   position: relative;
   font-size: 0.95rem;
   letter-spacing: 3px;
@@ -396,67 +402,79 @@ button:disabled {
 }
 
 @keyframes countdown-pulse {
-  0% {
-    opacity: 0;
-  }
-  10% {
-    opacity: 1;
-  }
-  90% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-  }
+  0% { opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { opacity: 0; }
 }
 
-/* ===== RESPONSIVE SCALING ===== */
-
-@media (max-width: 768px) {
+/* ===== RESPONSIVE SCALING (LAPTOPS & 24" MONITORS) ===== */
+@media screen and (max-height: 1000px), screen and (max-width: 1366px) {
   .container {
-    padding: 2rem;
-    width: 95%;
+    max-width: 560px; 
+    padding: 1.5rem 2.5rem 2.5rem 2.5rem;
   }
-  
+
   h1 {
     font-size: 3rem;
+    margin-bottom: 0.2rem;
   }
   
-  .input {
-    font-size: 1.1rem;
+  .tagline {
+    margin-bottom: 1.2rem;
+    font-size: 1rem;
+  }
+
+  .form-section {
+    margin-bottom: 1.5rem;
   }
   
-  .btn-primary,
+  .form-section label {
+    font-size: 0.85rem;
+  }
+
+  .input, 
+  .btn-primary, 
   .btn-secondary {
-    font-size: 0.95rem;
+    padding: 1.1rem; 
+    font-size: 1rem;
+  }
+
+  .btn-back,
+  .btn-copy {
+    padding: 0.85rem 1.2rem;
+    font-size: 0.85rem;
+  }
+
+  .divider {
+    margin: 1.5rem 0; 
   }
   
-  .countdown-number {
-    font-size: 8rem;
+  .lobby-header {
+    margin-bottom: 1.2rem;
+  }
+  
+  .settings-section,
+  .players-section {
+    margin: 1.2rem 0;
+  }
+  
+  .player-item {
+    padding: 1.1rem;
   }
 }
 
-@media (min-width: 1400px) {
+/* MOBILE SPECIFIC */
+@media (max-width: 768px) {
   .container {
-    max-width: 850px;
-    padding: 3.5rem;
+    padding: 1.2rem;
+    width: 95%;
   }
-  
-  h1 {
-    font-size: 4.5rem;
-  }
-  
-  .input {
-    font-size: 1.4rem;
-  }
+  h1 { font-size: 2.2rem; }
 }
-
-/* ===== ACCESSIBILITY ===== */
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
