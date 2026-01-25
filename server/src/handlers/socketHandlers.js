@@ -284,6 +284,66 @@ function setupSocketHandlers(io) {
       }
     });
 
+    socket.on('force_reset_game', async (data, callback) => {
+      try {
+        const { roomCode } = data;
+        const playerId = socket.playerId;
+
+        const room = await roomManager.getRoom(roomCode);
+        if (!room) {
+          return callback({ success: false, error: 'Room not found' });
+        }
+
+        if (room.hostId !== playerId) {
+          return callback({ success: false, error: 'Only host can reset game' });
+        }
+
+        console.log(`🔄 FORCE RESET: Host ${playerId} resetting room ${roomCode}`);
+
+        // Reset room to lobby state
+        room.status = 'LOBBY';
+        room.sentences = [];
+        room.gameStartedAt = null;
+        room.spectators = [];
+
+        // Reset all players
+        Object.keys(room.players).forEach(pId => {
+          const p = room.players[pId];
+          p.status = 'ALIVE';
+          p.currentSentenceIndex = 0;
+          p.rouletteOdds = 6;
+          p.mistakeStrikes = 0;
+          p.completedSentences = 0;
+          p.totalCorrectChars = 0;
+          p.totalTypedChars = 0;
+          p.totalMistypes = 0;
+          p.currentCharIndex = 0;
+          p.currentWordIndex = 0;
+          p.currentCharInWord = 0;
+          p.sentenceStartTime = null;
+          p.rouletteHistory = [];
+          p.sentenceHistory = [];
+          p.averageWPM = 0;
+          p.peakWPM = 0;
+          p.currentSessionWPM = 0;
+        });
+
+        await roomManager.updateRoom(roomCode, room);
+
+        // Notify all players to return to lobby
+        io.to(roomCode).emit('game_force_reset', {
+          room: room
+        });
+
+        console.log(`Room ${roomCode} reset to lobby`);
+        callback({ success: true });
+
+      } catch (error) {
+        console.error('Force reset error:', error.message);
+        callback({ success: false, error: error.message });
+      }
+    });
+
     socket.on('char_typed', async (data) => {
       try {
         const { roomCode, char, charIndex } = data;

@@ -137,6 +137,23 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
   const currentPlayer = players[playerId] || {};
   const [spectatingPlayerId, setSpectatingPlayerId] = useState(null);
   const spectatorTarget = isSpectator && spectatingPlayerId ? players[spectatingPlayerId] : null;
+  const isHost = room.hostId === playerId;
+
+  const handleResetGame = () => {
+    if (!isHost) return;
+    
+    const confirmed = window.confirm(
+      'ABORT MISSION?\n\nThis will stop the game for everyone and return to lobby.\n\nContinue?'
+    );
+    
+    if (confirmed) {
+      socket.emit('force_reset_game', { roomCode: room.roomCode }, (response) => {
+        if (!response.success) {
+          console.error('Failed to reset game:', response.error);
+        }
+      });
+    }
+  };
 
   useEffect(() => {
     if (isSpectator) return;
@@ -477,7 +494,14 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
         ) : (
           <div></div>
         )}
-        <button onClick={onLeave} className="term-btn">EXIT</button>
+        <div className="header-right">
+          {isHost && (
+            <button onClick={handleResetGame} className="term-btn-reset">
+              ABORT
+            </button>
+          )}
+          <button onClick={onLeave} className="term-btn">EXIT</button>
+        </div>
       </div>
 
       <div className="terminal-body">

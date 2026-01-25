@@ -120,12 +120,21 @@ function App() {
       console.log('REPLAY INITIATED');
       setCurrentRoom(data.room);
       setGameEndData(null);
+      setUserRole('PLAYER');
       setView('LOBBY');
     });
 
     socket.on('sync_sentences', (data) => {
       console.log(`Syncing ${data.sentences.length} sentences for spectator`);
       setSentences(data.sentences);
+    });
+
+    socket.on('game_force_reset', (data) => {
+      console.log('GAME FORCE RESET BY HOST');
+      setCurrentRoom(data.room);
+      setGameEndData(null);
+      setUserRole('PLAYER');
+      setView('LOBBY');
     });
 
     return () => {
@@ -139,6 +148,7 @@ function App() {
       socket.off('game_start');
       socket.off('replay_started');
       socket.off('sync_sentences');
+      socket.off('game_force_reset');
     };
   }, [currentRoom]);
 
