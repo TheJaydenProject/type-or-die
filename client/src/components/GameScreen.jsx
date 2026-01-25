@@ -470,6 +470,13 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
       )}
 
       <div className="terminal-header">
+        {isSpectator && spectatorTarget ? (
+          <div className="spectator-header-badge">
+            SPECTATING: {spectatorTarget.nickname}
+          </div>
+        ) : (
+          <div></div>
+        )}
         <button onClick={onLeave} className="term-btn">EXIT</button>
       </div>
 
@@ -491,17 +498,6 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
                 <p>MISSION COMPLETE</p>
                 <p>SURVIVED: {currentPlayer.completedSentences}/{sentences.length}</p>
                 <p className="victory-sub">[ANALYZING RESULTS]<span className="loading-dots" /></p>
-              </div>
-            </div>
-          )}
-
-          {isSpectator && spectatorTarget && (
-            <div className="spectator-overlay">
-              <div className="spectator-badge">
-                SPECTATING: {spectatorTarget.nickname}
-              </div>
-              <div className="spectator-hint">
-                Click any player in the leaderboard to switch view
               </div>
             </div>
           )}
