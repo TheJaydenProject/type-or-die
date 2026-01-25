@@ -360,6 +360,8 @@ function setupSocketHandlers(io) {
             } else {
               const newSentenceStartTime = Date.now();
               player.sentenceStartTime = newSentenceStartTime;
+              player.currentWordIndex = 0;
+              player.currentCharInWord = 0;
 
               await roomManager.updateRoom(roomCode, room);
 
@@ -374,25 +376,41 @@ function setupSocketHandlers(io) {
                 currentCharInWord: 0,
                 currentCharIndex: 0
               });
+
+              io.to(roomCode).emit('player_progress', {
+                playerId: playerId,
+                charIndex: 0,
+                sentenceIndex: player.currentSentenceIndex,
+                currentWordIndex: 0,
+                currentCharInWord: 0,
+                completedSentences: player.completedSentences,
+                totalCorrectChars: player.totalCorrectChars,
+                totalTypedChars: player.totalTypedChars,
+                totalMistypes: player.totalMistypes,
+                wpm: player.currentSessionWPM,
+                status: player.status,
+                sentenceStartTime: newSentenceStartTime
+              });
             }
+          } else {
+            // Normal character typed (not sentence completion)
+            await roomManager.updateRoom(roomCode, room);
+
+            io.to(roomCode).emit('player_progress', {
+              playerId: playerId,
+              charIndex: player.currentCharIndex,
+              sentenceIndex: player.currentSentenceIndex,
+              currentWordIndex: wordIndex,
+              currentCharInWord: charInWord,
+              completedSentences: player.completedSentences,
+              totalCorrectChars: player.totalCorrectChars,
+              totalTypedChars: player.totalTypedChars,
+              totalMistypes: player.totalMistypes,
+              wpm: player.currentSessionWPM,
+              status: player.status,
+              sentenceStartTime: player.sentenceStartTime
+            });
           }
-
-          await roomManager.updateRoom(roomCode, room);
-
-          io.to(roomCode).emit('player_progress', {
-            playerId: playerId,
-            charIndex: player.currentCharIndex,
-            sentenceIndex: player.currentSentenceIndex,
-            currentWordIndex: wordIndex,
-            currentCharInWord: charInWord,
-            completedSentences: player.completedSentences,
-            totalCorrectChars: player.totalCorrectChars,
-            totalTypedChars: player.totalTypedChars,
-            totalMistypes: player.totalMistypes,
-            wpm: player.currentSessionWPM,
-            status: player.status,
-            sentenceStartTime: player.sentenceStartTime
-          });
         } else {
           player.totalMistypes++;
           await roomManager.updateRoom(roomCode, room);

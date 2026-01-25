@@ -406,23 +406,30 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
       }
     };
 
-    const handleSentenceCompleted = (data) => {
-      setPlayers(prev => ({
-        ...prev,
-        [data.playerId]: {
-          ...prev[data.playerId],
-          completedSentences: (prev[data.playerId].completedSentences || 0) + 1,
-          currentSentenceIndex: data.newSentenceIndex,
-          sentenceStartTime: data.sentenceStartTime,
-          currentWordIndex: 0,
-          currentCharInWord: 0,
-          currentCharIndex: 0
-        }
-      }));
 
-      if (isSpectator && data.playerId === spectatingPlayerId) {
-        console.log(`Spectator sees sentence complete for ${players[data.playerId]?.nickname}`);
-      }
+    const handleSentenceCompleted = (data) => {
+      setPlayers(prev => {
+        const updated = {
+          ...prev,
+          [data.playerId]: {
+            ...prev[data.playerId],
+            completedSentences: (prev[data.playerId].completedSentences || 0) + 1,
+            currentSentenceIndex: data.newSentenceIndex,
+            sentenceStartTime: data.sentenceStartTime,
+            currentWordIndex: 0,
+            currentCharInWord: 0,
+            currentCharIndex: 0
+          }
+        };
+
+        if (isSpectator && data.playerId === spectatingPlayerId) {
+          console.log(`🎯 Spectator sees sentence complete for ${prev[data.playerId]?.nickname}`);
+          console.log(`  → Sentence ${prev[data.playerId]?.currentSentenceIndex} → ${data.newSentenceIndex}`);
+          console.log(`  → Reset indices to 0`);
+        }
+
+        return updated;
+      });
     };
 
     socket.on('player_progress', handlePlayerProgress);
@@ -508,6 +515,7 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
           />
 
           <TypingField
+            key={`typing-${isSpectator && spectatorTarget ? spectatingPlayerId : playerId}-${isSpectator && spectatorTarget ? (spectatorTarget.currentSentenceIndex || 0) : currentSentenceIndex}`}
             sentences={sentences}
             currentSentenceIndex={isSpectator && spectatorTarget ? (spectatorTarget.currentSentenceIndex || 0) : currentSentenceIndex}
             currentWordIndex={isSpectator && spectatorTarget ? (spectatorTarget.currentWordIndex || 0) : currentWordIndex}
