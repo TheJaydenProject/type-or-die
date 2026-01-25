@@ -3,6 +3,13 @@ const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const disconnectTimers = new Map();
 
+function cleanupDisconnectTimer(playerId) {
+  if (disconnectTimers.has(playerId)) {
+    clearTimeout(disconnectTimers.get(playerId));
+    disconnectTimers.delete(playerId);
+  }
+}
+
 function setupSocketHandlers(io) {
   io.on('connection', (socket) => {
     console.log(`Client connected: ${socket.id}`);
@@ -56,7 +63,7 @@ function setupSocketHandlers(io) {
     socket.on('join_room', async (data, callback) => {
       try {
         roomManager.validateEventData('join_room', data);
-        
+
         const { roomCode, nickname } = data;
         const ipAddress = socket.handshake.address;
         const playerId = uuidv4();
@@ -145,12 +152,9 @@ function setupSocketHandlers(io) {
       const playerId = socket.playerId;
       if (!roomCode || !playerId) return;
 
-      if (disconnectTimers.has(playerId)) {
-        clearTimeout(disconnectTimers.get(playerId));
-        disconnectTimers.delete(playerId);
-      }
+      cleanupDisconnectTimer(playerId);
 
-      const result = await roomManager.removePlayer(roomCode, playerId); 
+      const result = await roomManager.removePlayer(roomCode, playerId);
 
       if (result && !result.deleted && result.room) {
         socket.to(roomCode).emit('player_left', {
@@ -854,6 +858,7 @@ function setupSocketHandlers(io) {
         socket.join(roomCode);
 
         const updatedRoom = await roomManager.reconnectPlayer(roomCode, playerId, socket.id);
+        cleanupDisconnectTimer(playerId);
 
         socket.to(roomCode).emit('player_reconnected', {
           playerId: playerId,

@@ -5,16 +5,61 @@ class RoomManager {
   constructor() {
     this.ROOM_PREFIX = 'room:';
     this.IP_PREFIX = 'ip:';
+    this.LOCK_PREFIX = 'lock:room:';
     this.GLOBAL_ROOM_COUNT = 'global:room_count';
     this.MAX_ROOMS_PER_IP = 2;
     this.MAX_GLOBAL_ROOMS = 100;
     this.ROOM_TTL = 86400;
+    this.LOCK_TTL = 5;
+    this.LOCK_RETRY_ATTEMPTS = 3;
+    this.LOCK_RETRY_DELAY = 50;
     
     this.MAX_PLAYERS_PER_ROOM = 16;
     this.EVENT_RATE_LIMIT = 100;
     this.playerEventCounts = new Map();
     
     setInterval(() => this.cleanupRateLimitData(), 60000);
+  }
+
+  async acquireLock(roomCode) {
+    const lockKey = `${this.LOCK_PREFIX}${roomCode}`;
+    const lockValue = crypto.randomBytes(16).toString('hex');
+
+    for (let attempt = 0; attempt < this.LOCK_RETRY_ATTEMPTS; attempt++) {
+      const acquired = await redis.set(lockKey, lockValue, 'EX', this.LOCK_TTL, 'NX');
+      if (acquired === 'OK') {
+        return lockValue;
+      }
+      await new Promise(resolve => setTimeout(resolve, this.LOCK_RETRY_DELAY));
+    }
+
+    throw new Error('Failed to acquire room lock');
+  }
+
+  async releaseLock(roomCode, lockValue) {
+    const lockKey = `${this.LOCK_PREFIX}${roomCode}`;
+    const script = `
+      if redis.call("get", KEYS[1]) == ARGV[1] then
+        return redis.call("del", KEYS[1])
+      else
+        return 0
+      end
+    `;
+    
+    try {
+      await redis.eval(script, 1, lockKey, lockValue);
+    } catch (err) {
+      console.error(`Lock release failed for ${roomCode}:`, err.message);
+    }
+  }
+
+  async withLock(roomCode, operation) {
+    const lockValue = await this.acquireLock(roomCode);
+    try {
+      return await operation();
+    } finally {
+      await this.releaseLock(roomCode, lockValue);
+    }
   }
 
   generateRoomCode() {
@@ -69,7 +114,7 @@ class RoomManager {
     
     return nickname
       .trim()
-      .replace(/[<>\"'&]/g, '')
+      .replace(/[<>"'&]/g, '')
       .replace(/\s+/g, ' ')
       .substring(0, 20);
   }
@@ -252,10 +297,20 @@ class RoomManager {
   async getRoom(roomCode) {
     const roomData = await redis.get(`${this.ROOM_PREFIX}${roomCode}`);
     if (!roomData) return null;
-    return JSON.parse(roomData);
+    
+    try {
+      return JSON.parse(roomData);
+    } catch (err) {
+      console.error(`Failed to parse room ${roomCode}:`, err.message);
+      return null;
+    }
   }
 
   async updateRoom(roomCode, room) {
+    if (!room) {
+      throw new Error('Cannot update null room');
+    }
+    
     room.lastActivity = Date.now();
     await redis.set(
       `${this.ROOM_PREFIX}${roomCode}`,
@@ -266,107 +321,115 @@ class RoomManager {
   }
 
   async addPlayer(roomCode, playerId, nickname, ipAddress) {
-    const room = await this.getRoom(roomCode);
-    if (!room) {
-      throw new Error('Room not found');
-    }
+    return this.withLock(roomCode, async () => {
+      const room = await this.getRoom(roomCode);
+      if (!room) {
+        throw new Error('Room not found');
+      }
 
-    const playerCount = Object.keys(room.players).length;
-    if (playerCount >= this.MAX_PLAYERS_PER_ROOM) {
-      throw new Error(`Room full (${this.MAX_PLAYERS_PER_ROOM}/${this.MAX_PLAYERS_PER_ROOM} players)`);
-    }
+      const hashedIP = this.hashIP(ipAddress);
+      const sanitizedNickname = this.sanitizeNickname(nickname);
 
-    const hashedIP = this.hashIP(ipAddress);
-    const sanitizedNickname = this.sanitizeNickname(nickname);
+      if (room.status === 'PLAYING' || room.status === 'COUNTDOWN') {
+        room.spectators.push(playerId);
+        await this.updateRoom(roomCode, room);
+        return { room, role: 'SPECTATOR' };
+      }
 
-    if (room.status === 'PLAYING' || room.status === 'COUNTDOWN') {
-      room.spectators.push(playerId);
+      const currentPlayerCount = Object.keys(room.players).length;
+      if (currentPlayerCount >= this.MAX_PLAYERS_PER_ROOM) {
+        throw new Error(
+          `Room full (${currentPlayerCount}/${this.MAX_PLAYERS_PER_ROOM} players)`
+        );
+      }
+
+      room.players[playerId] = {
+        id: playerId,
+        nickname: sanitizedNickname,
+        isGuest: true,
+        socketId: null,
+        ipAddress: hashedIP,
+        status: 'ALIVE',
+        currentSentenceIndex: 0,
+        rouletteOdds: 6,
+        mistakeStrikes: 0,
+        completedSentences: 0,
+        totalCorrectChars: 0,
+        totalTypedChars: 0,
+        totalMistypes: 0,
+        currentCharIndex: 0,
+        currentWordIndex: 0,
+        currentCharInWord: 0,
+        sentenceStartTime: null,
+        remainingTime: 20,
+        rouletteHistory: [],
+        sentenceHistory: [],
+        averageWPM: 0,
+        peakWPM: 0,
+        currentSessionWPM: 0
+      };
+
       await this.updateRoom(roomCode, room);
-      return { room, role: 'SPECTATOR' };
-    }
-
-    room.players[playerId] = {
-      id: playerId,
-      nickname: sanitizedNickname,
-      isGuest: true,
-      socketId: null,
-      ipAddress: hashedIP,
-      status: 'ALIVE',
-      currentSentenceIndex: 0,
-      rouletteOdds: 6,
-      mistakeStrikes: 0,
-      completedSentences: 0,
-      totalCorrectChars: 0,
-      totalTypedChars: 0,
-      totalMistypes: 0,
-      currentCharIndex: 0,
-      currentWordIndex: 0,
-      currentCharInWord: 0,
-      sentenceStartTime: null,
-      remainingTime: 20,
-      rouletteHistory: [],
-      sentenceHistory: [],
-      averageWPM: 0,
-      peakWPM: 0,
-      currentSessionWPM: 0
-    };
-
-    await this.updateRoom(roomCode, room);
-    
-    console.log(`Player joined: ${sanitizedNickname} → ${roomCode}`);
-    
-    return { room, role: 'PLAYER' };
+      
+      console.log(`Player joined: ${sanitizedNickname} → ${roomCode}`);
+      
+      return { room, role: 'PLAYER' };
+    });
   }
 
   async removePlayer(roomCode, playerId) {
-    const room = await this.getRoom(roomCode);
-    if (!room) return { deleted: true };
+    return this.withLock(roomCode, async () => {
+      const room = await this.getRoom(roomCode);
+      if (!room) return { deleted: true };
 
-    console.log(`Removing player ${playerId} from room ${roomCode}`);
+      console.log(`Removing player ${playerId} from room ${roomCode}`);
 
-    this.playerEventCounts.delete(playerId);
+      this.playerEventCounts.delete(playerId);
 
-    delete room.players[playerId];
-    room.spectators = room.spectators.filter(id => id !== playerId);
+      delete room.players[playerId];
+      room.spectators = room.spectators.filter(id => id !== playerId);
 
-    const remainingPlayers = Object.keys(room.players).length;
-    const remainingSpectators = room.spectators.length;
+      const remainingPlayers = Object.keys(room.players).length;
+      const remainingSpectators = room.spectators.length;
 
-    console.log(`  ↳ Players left: ${remainingPlayers}, Spectators: ${remainingSpectators}`);
+      console.log(`  ↳ Players left: ${remainingPlayers}, Spectators: ${remainingSpectators}`);
 
-    if (remainingPlayers === 0 && remainingSpectators === 0) {
-      console.log(`  ↳ Room is empty, deleting...`);
-      await this.deleteRoom(roomCode);
-      return { deleted: true };
-    }
-
-    if (room.hostId === playerId) {
-      const playerIds = Object.keys(room.players);
-      if (playerIds.length > 0) {
-        const oldHost = room.hostId;
-        room.hostId = playerIds[0];
-        console.log(`Host migrated: ${oldHost} → ${room.hostId} (${room.players[room.hostId].nickname})`);
+      if (remainingPlayers === 0 && remainingSpectators === 0) {
+        console.log(`  ↳ Room is empty, deleting...`);
+        await this.deleteRoom(roomCode);
+        return { deleted: true };
       }
-    }
 
-    await this.updateRoom(roomCode, room);
-    return { deleted: false, room };
+      if (room.hostId === playerId) {
+        const playerIds = Object.keys(room.players);
+        if (playerIds.length > 0) {
+          const oldHost = room.hostId;
+          room.hostId = playerIds[0];
+          console.log(`Host migrated: ${oldHost} → ${room.hostId} (${room.players[room.hostId].nickname})`);
+        }
+      }
+
+      await this.updateRoom(roomCode, room);
+      return { deleted: false, room };
+    });
   }
 
   async reconnectPlayer(roomCode, playerId, newSocketId) {
-    const room = await this.getRoom(roomCode);
-    if (!room) throw new Error('Room not found');
+    return this.withLock(roomCode, async () => {
+      const room = await this.getRoom(roomCode);
+      if (!room) throw new Error('Room not found');
 
-    const player = room.players[playerId];
-    if (!player) throw new Error('Player not found in room');
-    
-    player.status = 'ALIVE';
-    player.socketId = newSocketId;
-    player.gracePeriodActive = false;
-    player.disconnectedAt = null;
+      const player = room.players[playerId];
+      if (!player) throw new Error('Player not found in room');
+      
+      player.status = 'ALIVE';
+      player.socketId = newSocketId;
+      player.gracePeriodActive = false;
+      player.disconnectedAt = null;
 
-    await this.updateRoom(roomCode, room);
-    return room;
+      await this.updateRoom(roomCode, room);
+      return room;
+    });
   }
 
   async deleteRoom(roomCode) {
@@ -380,11 +443,15 @@ class RoomManager {
     const ipRoomsKey = `${this.IP_PREFIX}${room.creatorIP}:rooms`;
     const rooms = await redis.get(ipRoomsKey);
     if (rooms) {
-      const roomList = JSON.parse(rooms).filter(r => r !== roomCode);
-      if (roomList.length > 0) {
-        await redis.set(ipRoomsKey, JSON.stringify(roomList), 'EX', this.ROOM_TTL);
-      } else {
-        await redis.del(ipRoomsKey);
+      try {
+        const roomList = JSON.parse(rooms).filter(r => r !== roomCode);
+        if (roomList.length > 0) {
+          await redis.set(ipRoomsKey, JSON.stringify(roomList), 'EX', this.ROOM_TTL);
+        } else {
+          await redis.del(ipRoomsKey);
+        }
+      } catch (err) {
+        console.error(`Failed to update IP rooms for ${room.creatorIP}:`, err.message);
       }
     }
 
