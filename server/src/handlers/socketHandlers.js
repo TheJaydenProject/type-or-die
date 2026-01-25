@@ -80,6 +80,7 @@ function setupSocketHandlers(io) {
         socket.join(room.roomCode);
         socket.playerId = playerId;
         socket.roomCode = room.roomCode;
+        socket.nickname = nickname.trim().substring(0, 20);
 
         if (role === 'PLAYER') {
           room.players[playerId].socketId = socket.id;
@@ -298,15 +299,70 @@ function setupSocketHandlers(io) {
           return callback({ success: false, error: 'Only host can reset game' });
         }
 
-        console.log(`🔄 FORCE RESET: Host ${playerId} resetting room ${roomCode}`);
+        console.log(`FORCE RESET: Host ${playerId} resetting room ${roomCode}`);
+
+        // Find spectator sockets and get their info
+        const spectatorSocketMap = new Map();
+        const roomSockets = await io.in(roomCode).fetchSockets();
+        
+        for (const sock of roomSockets) {
+          if (room.spectators && room.spectators.includes(sock.playerId)) {
+            spectatorSocketMap.set(sock.playerId, sock);
+          }
+        }
+
+        // Move spectators to players
+        if (room.spectators && room.spectators.length > 0) {
+          for (const spectatorId of room.spectators) {
+            // If spectator was a dead player, they're already in room.players
+            if (!room.players[spectatorId]) {
+              // This is a mid-game joiner spectator - need to create player object
+              const spectatorSocket = spectatorSocketMap.get(spectatorId);
+              if (spectatorSocket) {
+                // Try to find their nickname (stored when they joined)
+                const nickname = spectatorSocket.nickname || 'SPECTATOR';
+                
+                console.log(`  → Adding spectator ${nickname} (${spectatorId}) as player`);
+                
+                room.players[spectatorId] = {
+                  id: spectatorId,
+                  nickname: nickname,
+                  isGuest: true,
+                  socketId: spectatorSocket.id,
+                  ipAddress: spectatorSocket.handshake.address,
+                  status: 'ALIVE',
+                  currentSentenceIndex: 0,
+                  rouletteOdds: 6,
+                  mistakeStrikes: 0,
+                  completedSentences: 0,
+                  totalCorrectChars: 0,
+                  totalTypedChars: 0,
+                  totalMistypes: 0,
+                  currentCharIndex: 0,
+                  currentWordIndex: 0,
+                  currentCharInWord: 0,
+                  sentenceStartTime: null,
+                  remainingTime: 20,
+                  rouletteHistory: [],
+                  sentenceHistory: [],
+                  averageWPM: 0,
+                  peakWPM: 0,
+                  currentSessionWPM: 0
+                };
+              }
+            } else {
+              console.log(`  → Resetting dead player ${room.players[spectatorId].nickname} back to ALIVE`);
+            }
+          }
+        }
 
         // Reset room to lobby state
         room.status = 'LOBBY';
         room.sentences = [];
         room.gameStartedAt = null;
-        room.spectators = [];
+        room.spectators = []; // Clear spectators array
 
-        // Reset all players
+        // Reset all players (including former spectators)
         Object.keys(room.players).forEach(pId => {
           const p = room.players[pId];
           p.status = 'ALIVE';
@@ -343,7 +399,7 @@ function setupSocketHandlers(io) {
         callback({ success: false, error: error.message });
       }
     });
-
+    
     socket.on('char_typed', async (data) => {
       try {
         const { roomCode, char, charIndex } = data;

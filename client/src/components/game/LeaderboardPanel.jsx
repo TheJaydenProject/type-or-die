@@ -24,7 +24,7 @@ function LeaderboardPanel({ players, playerId, totalSentences, onPlayerClick, hi
             style={{ cursor: onPlayerClick && player.status === 'ALIVE' ? 'pointer' : 'default' }}
           >
             <div className="lb-rank">
-              {idx + 1}. {player.id === playerId ? '[YOU] ' : ''}{player.nickname}
+              {idx + 1}. {player.nickname}
               {player.status === 'DEAD' && ' [X]'}
             </div>
             <div className="lb-bar">

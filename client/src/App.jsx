@@ -467,7 +467,7 @@ function App() {
               {players.map((player) => (
                 <div key={player.id} className="player-item">
                   {player.id === currentRoom.hostId && '[HOST] '}
-                  {player.id === playerId ? `${player.nickname} [YOU]` : player.nickname}
+                  {player.nickname}
                 </div>
               ))}
             </div>

@@ -129,6 +129,7 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
   const [rouletteResult, setRouletteResult] = useState(null);
   const [isProcessingError, setIsProcessingError] = useState(false);
   const [showVictory, setShowVictory] = useState(false);
+  const [showAbortConfirm, setShowAbortConfirm] = useState(false);
   const rouletteActiveRef = useRef(false);
   
   const currentSentence = sentences[currentSentenceIndex] || '';
@@ -141,18 +142,20 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
 
   const handleResetGame = () => {
     if (!isHost) return;
-    
-    const confirmed = window.confirm(
-      'ABORT MISSION?\n\nThis will stop the game for everyone and return to lobby.\n\nContinue?'
-    );
-    
-    if (confirmed) {
-      socket.emit('force_reset_game', { roomCode: room.roomCode }, (response) => {
-        if (!response.success) {
-          console.error('Failed to reset game:', response.error);
-        }
-      });
-    }
+    setShowAbortConfirm(true);
+  };
+
+  const confirmAbort = () => {
+    socket.emit('force_reset_game', { roomCode: room.roomCode }, (response) => {
+      if (!response.success) {
+        console.error('Failed to reset game:', response.error);
+      }
+    });
+    setShowAbortConfirm(false);
+  };
+
+  const cancelAbort = () => {
+    setShowAbortConfirm(false);
   };
 
   useEffect(() => {
@@ -477,6 +480,27 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
 
   return (
     <div key={flashKey} className={`terminal ${mistypeFlash ? 'flash' : ''}`}>
+      {showAbortConfirm && (
+        <div className="confirm-overlay">
+          <div className="confirm-dialog">
+            <div className="confirm-title">ABORT MISSION?</div>
+            <div className="confirm-message">
+              This will stop the game for everyone and return to lobby.
+              
+              Continue?
+            </div>
+            <div className="confirm-actions">
+              <button onClick={confirmAbort} className="confirm-btn confirm-btn-ok">
+                OK
+              </button>
+              <button onClick={cancelAbort} className="confirm-btn confirm-btn-cancel">
+                CANCEL
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showRoulette && rouletteResult && (
         <RouletteRevolver 
           survived={rouletteResult.survived}

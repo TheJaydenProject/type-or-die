@@ -1,4 +1,86 @@
 /* ============================================
+   CONFIRMATION DIALOG
+   ============================================ */
+
+.confirm-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.confirm-dialog {
+  background: var(--bg-panel);
+  border: 2px solid var(--accent-red);
+  max-width: 500px;
+  width: 90%;
+  padding: 2.5rem;
+  box-shadow: 0 0 30px rgba(255, 0, 0, 0.3);
+}
+
+.confirm-title {
+  font-size: 1.5rem;
+  color: var(--accent-red);
+  letter-spacing: 4px;
+  margin-bottom: 1.5rem;
+  border-bottom: 2px solid var(--accent-red);
+  padding-bottom: 0.8rem;
+  font-weight: bold;
+}
+
+.confirm-message {
+  color: var(--text-main);
+  font-size: 1.1rem;
+  line-height: 1.8;
+  margin-bottom: 2rem;
+  letter-spacing: 1px;
+  white-space: pre-line;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 1rem;
+}
+
+.confirm-btn {
+  flex: 1;
+  padding: 1rem 2rem;
+  background: transparent;
+  font-size: 1rem;
+  letter-spacing: 3px;
+  cursor: crosshair;
+  transition: all 0.1s;
+  font-weight: bold;
+  border: 2px solid;
+}
+
+.confirm-btn-ok {
+  border-color: var(--accent-red);
+  color: var(--accent-red);
+}
+
+.confirm-btn-ok:hover {
+  background: var(--accent-red);
+  color: var(--bg-app);
+}
+
+.confirm-btn-cancel {
+  border-color: var(--text-dim);
+  color: var(--text-muted);
+}
+
+.confirm-btn-cancel:hover {
+  border-color: var(--text-main);
+  color: var(--text-main);
+}
+
+/* ============================================
    ANIMATIONS (ALL AT TOP)
    ============================================ */
 
@@ -147,6 +229,30 @@
 }
 
 .term-btn:hover {
+  border-color: var(--accent-red);
+  color: var(--accent-red);
+  box-shadow: 0 0 10px rgba(255, 0, 0, 0.3);
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.term-btn-reset {
+  padding: 0.8rem 2rem;
+  background: transparent;
+  border: 2px solid var(--text-dim);
+  color: var(--text-muted);
+  font-size: 1rem;
+  letter-spacing: 3px;
+  cursor: crosshair;
+  transition: all 0.1s;
+  font-weight: bold;
+}
+
+.term-btn-reset:hover {
   border-color: var(--accent-red);
   color: var(--accent-red);
   box-shadow: 0 0 10px rgba(255, 0, 0, 0.3);
