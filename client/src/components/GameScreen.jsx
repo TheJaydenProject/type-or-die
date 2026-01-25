@@ -411,14 +411,18 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
         ...prev,
         [data.playerId]: {
           ...prev[data.playerId],
-          completedSentences: prev[data.playerId].completedSentences + 1,
+          completedSentences: (prev[data.playerId].completedSentences || 0) + 1,
           currentSentenceIndex: data.newSentenceIndex,
           sentenceStartTime: data.sentenceStartTime,
-          currentWordIndex: data.currentWordIndex,
-          currentCharInWord: data.currentCharInWord,
-          currentCharIndex: data.currentCharIndex
+          currentWordIndex: 0,
+          currentCharInWord: 0,
+          currentCharIndex: 0
         }
       }));
+
+      if (isSpectator && data.playerId === spectatingPlayerId) {
+        console.log(`Spectator sees sentence complete for ${players[data.playerId]?.nickname}`);
+      }
     };
 
     socket.on('player_progress', handlePlayerProgress);
