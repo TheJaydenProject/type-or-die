@@ -137,7 +137,6 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
   const currentPlayer = players[playerId] || {};
   const [spectatingPlayerId, setSpectatingPlayerId] = useState(null);
   const spectatorTarget = isSpectator && spectatingPlayerId ? players[spectatingPlayerId] : null;
-  const displayPlayer = isSpectator ? spectatorTarget : currentPlayer;
 
   useEffect(() => {
     if (isSpectator) return;
@@ -158,6 +157,26 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
 
     return () => clearInterval(interval);
   }, [status, currentSentenceIndex, socket, room.roomCode, isSpectator]);
+
+  useEffect(() => {
+    if (!isSpectator || !spectatorTarget || spectatorTarget.status !== 'ALIVE') return;
+    if (!spectatorTarget.sentenceStartTime) return;
+
+    const interval = setInterval(() => {
+      const elapsed = (Date.now() - spectatorTarget.sentenceStartTime) / 1000;
+      const calculated = Math.max(0, 20 - elapsed);
+      
+      setPlayers(prev => ({
+        ...prev,
+        [spectatingPlayerId]: {
+          ...prev[spectatingPlayerId],
+          calculatedTime: calculated
+        }
+      }));
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, [isSpectator, spectatorTarget?.sentenceStartTime, spectatingPlayerId]);
 
   useEffect(() => {
     if (status !== 'ALIVE' || isProcessingError || isSpectator) return;
@@ -270,17 +289,7 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
           totalMistypes: data.totalMistypes,
           averageWPM: data.wpm,
           status: data.status,
-          remainingTime: data.remainingTime || 20
-        }
-      }));
-    };
-
-    const handleTimerSync = (data) => {
-      setPlayers(prev => ({
-        ...prev,
-        [data.playerId]: {
-          ...prev[data.playerId],
-          remainingTime: data.remainingTime
+          sentenceStartTime: data.sentenceStartTime
         }
       }));
     };
@@ -290,7 +299,8 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
         ...prev,
         [data.playerId]: {
           ...prev[data.playerId],
-          mistakeStrikes: data.strikes
+          mistakeStrikes: data.strikes,
+          sentenceStartTime: data.sentenceStartTime
         }
       }));
 
@@ -316,13 +326,24 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
         setShowRoulette(true);
         setRouletteResult(data);
         
+        if (data.survived) {
+          setPlayers(prev => ({
+            ...prev,
+            [data.playerId]: {
+              ...prev[data.playerId],
+              rouletteOdds: data.newOdds,
+              mistakeStrikes: 0,
+              sentenceStartTime: data.sentenceStartTime
+            }
+          }));
+        }
+        
         setTimeout(() => {
           setShowRoulette(false);
           setRouletteResult(null);
         }, 4500);
       }
       
-      // Original player logic
       if (data.playerId === playerId) {
         rouletteActiveRef.current = true;
         
@@ -338,7 +359,8 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
           [data.playerId]: {
             ...prev[data.playerId],
             rouletteOdds: data.newOdds,
-            mistakeStrikes: data.survived ? 0 : prev[data.playerId].mistakeStrikes
+            mistakeStrikes: data.survived ? 0 : prev[data.playerId].mistakeStrikes,
+            sentenceStartTime: data.survived ? data.sentenceStartTime : prev[data.playerId].sentenceStartTime
           }
         }));
         
@@ -360,7 +382,8 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
           [data.playerId]: {
             ...prev[data.playerId],
             rouletteOdds: data.newOdds,
-            mistakeStrikes: data.survived ? 0 : prev[data.playerId].mistakeStrikes
+            mistakeStrikes: data.survived ? 0 : prev[data.playerId].mistakeStrikes,
+            sentenceStartTime: data.survived ? data.sentenceStartTime : prev[data.playerId].sentenceStartTime
           }
         }));
       }
@@ -385,13 +408,13 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
         ...prev,
         [data.playerId]: {
           ...prev[data.playerId],
-          completedSentences: prev[data.playerId].completedSentences + 1
+          completedSentences: prev[data.playerId].completedSentences + 1,
+          sentenceStartTime: data.sentenceStartTime
         }
       }));
     };
 
     socket.on('player_progress', handlePlayerProgress);
-    socket.on('timer_sync', handleTimerSync);
     socket.on('player_strike', handlePlayerStrike);
     socket.on('roulette_result', handleRouletteResult);
     socket.on('player_died', handlePlayerDied);
@@ -399,7 +422,6 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
 
     return () => {
       socket.off('player_progress', handlePlayerProgress);
-      socket.off('timer_sync', handleTimerSync);
       socket.off('player_strike', handlePlayerStrike);
       socket.off('roulette_result', handleRouletteResult);
       socket.off('player_died', handlePlayerDied);
@@ -415,6 +437,8 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
     }
     return b.totalCorrectChars - a.totalCorrectChars;
   });
+
+  const spectatorDisplayTime = spectatorTarget?.calculatedTime ?? 20;
 
   return (
     <div key={flashKey} className={`terminal ${mistypeFlash ? 'flash' : ''}`}>
@@ -465,7 +489,7 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
           )}
 
           <StatusHUD
-            remainingTime={isSpectator && spectatorTarget ? (spectatorTarget.remainingTime || 20) : remainingTime}
+            remainingTime={isSpectator && spectatorTarget ? spectatorDisplayTime : remainingTime}
             mistakeStrikes={isSpectator && spectatorTarget ? (spectatorTarget.mistakeStrikes || 0) : (currentPlayer.mistakeStrikes || 0)}
             currentSentenceIndex={isSpectator && spectatorTarget ? (spectatorTarget.currentSentenceIndex || 0) : currentSentenceIndex}
             totalSentences={sentences.length}

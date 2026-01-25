@@ -4,39 +4,6 @@ const crypto = require('crypto');
 const disconnectTimers = new Map();
 
 function setupSocketHandlers(io) {
-  // Timer sync system - updates every 500ms for all active games
-  const timerInterval = setInterval(async () => {
-    try {
-      const redis = require('../config/redis');
-      const roomKeys = await redis.keys('room:*');
-      
-      for (const key of roomKeys) {
-        const roomCode = key.replace('room:', '');
-        const room = await roomManager.getRoom(roomCode);
-        
-        if (!room || room.status !== 'PLAYING') continue;
-        
-        Object.keys(room.players).forEach(pId => {
-          const player = room.players[pId];
-          if (player.status === 'ALIVE' && player.sentenceStartTime) {
-            const elapsed = (Date.now() - player.sentenceStartTime) / 1000;
-            player.remainingTime = Math.max(0, 20 - elapsed);
-            
-            io.to(roomCode).emit('timer_sync', {
-              playerId: pId,
-              remainingTime: player.remainingTime
-            });
-          }
-        });
-      }
-    } catch (error) {
-      console.error('Timer sync error:', error.message);
-    }
-  }, 500);
-  
-  process.on('SIGTERM', () => clearInterval(timerInterval));
-  process.on('SIGINT', () => clearInterval(timerInterval));
-
   io.on('connection', (socket) => {
     console.log(`Client connected: ${socket.id}`);
 
@@ -134,7 +101,7 @@ function setupSocketHandlers(io) {
               totalMistypes: p.totalMistypes || 0,
               wpm: p.averageWPM || 0,
               status: p.status || 'ALIVE',
-              remainingTime: p.remainingTime || 20
+              sentenceStartTime: p.sentenceStartTime
             });
           });
 
@@ -269,7 +236,6 @@ function setupSocketHandlers(io) {
           player.currentWordIndex = 0;
           player.currentCharInWord = 0; 
           player.sentenceStartTime = null;
-          player.remainingTime = 20;
           player.rouletteHistory = [];
           player.sentenceHistory = [];
           player.averageWPM = 0;
@@ -294,15 +260,16 @@ function setupSocketHandlers(io) {
             updatedRoom.status = 'PLAYING';
             updatedRoom.gameStartedAt = Date.now();
             
+            const gameStartTime = Date.now();
             Object.keys(updatedRoom.players).forEach(pId => {
-              updatedRoom.players[pId].sentenceStartTime = Date.now();
+              updatedRoom.players[pId].sentenceStartTime = gameStartTime;
             });
             
             await roomManager.updateRoom(roomCode, updatedRoom);
 
             io.to(roomCode).emit('game_start', {
               firstSentence: sentences[0],
-              gameStartTime: Date.now()
+              gameStartTime: gameStartTime
             });
 
             console.log(`Game started: ${roomCode}`);
@@ -373,13 +340,6 @@ function setupSocketHandlers(io) {
               wpm: player.currentSessionWPM
             });
 
-            io.to(roomCode).emit('sentence_completed', {
-              playerId: playerId,
-              sentenceIndex: player.currentSentenceIndex - 1,
-              time: timeUsed,
-              wpm: player.currentSessionWPM
-            });
-
             if (player.completedSentences === room.settings.sentenceCount) {
               room.status = 'FINISHED';
               await roomManager.updateRoom(roomCode, room);
@@ -398,8 +358,18 @@ function setupSocketHandlers(io) {
                 finalStats: room.players
               });
             } else {
-              player.sentenceStartTime = Date.now();
-              player.remainingTime = 20;
+              const newSentenceStartTime = Date.now();
+              player.sentenceStartTime = newSentenceStartTime;
+
+              await roomManager.updateRoom(roomCode, room);
+
+              io.to(roomCode).emit('sentence_completed', {
+                playerId: playerId,
+                sentenceIndex: player.currentSentenceIndex - 1,
+                time: timeUsed,
+                wpm: player.currentSessionWPM,
+                sentenceStartTime: newSentenceStartTime
+              });
             }
           }
 
@@ -417,7 +387,7 @@ function setupSocketHandlers(io) {
             totalMistypes: player.totalMistypes,
             wpm: player.currentSessionWPM,
             status: player.status,
-            remainingTime: player.remainingTime
+            sentenceStartTime: player.sentenceStartTime
           });
         } else {
           player.totalMistypes++;
@@ -435,7 +405,7 @@ function setupSocketHandlers(io) {
             totalMistypes: player.totalMistypes,
             wpm: player.currentSessionWPM,
             status: player.status,
-            remainingTime: player.remainingTime
+            sentenceStartTime: player.sentenceStartTime
           });
         }
 
@@ -461,13 +431,17 @@ function setupSocketHandlers(io) {
         console.log(`Strike: ${player.nickname} has ${player.mistakeStrikes}/3 strikes`);
 
         player.currentCharIndex = 0;
-        player.sentenceStartTime = Date.now();
-        player.remainingTime = 20;
+        const resetStartTime = Date.now();
+        player.sentenceStartTime = resetStartTime;
 
         io.to(roomCode).emit('player_strike', {
           playerId: playerId,
           strikes: player.mistakeStrikes,
-          maxStrikes: 3
+          maxStrikes: 3,
+          sentenceStartTime: resetStartTime,
+          currentWordIndex: 0,
+          currentCharInWord: 0,
+          currentCharIndex: 0
         });
 
         if (player.mistakeStrikes >= 3) {
@@ -489,15 +463,16 @@ function setupSocketHandlers(io) {
           if (survived) {
             player.rouletteOdds = Math.max(2, odds - 1);
             player.currentCharIndex = 0;
-            player.sentenceStartTime = Date.now();
-            player.remainingTime = 20;
+            const rouletteResetTime = Date.now();
+            player.sentenceStartTime = rouletteResetTime;
 
             io.to(roomCode).emit('roulette_result', {
               playerId: playerId,
               survived: true,
               newOdds: player.rouletteOdds,
               roll: roll,
-              previousOdds: odds
+              previousOdds: odds,
+              sentenceStartTime: rouletteResetTime
             });
           } else {
             player.status = 'DEAD';
@@ -581,15 +556,16 @@ function setupSocketHandlers(io) {
         if (survived) {
           player.rouletteOdds = Math.max(2, odds - 1);
           player.currentCharIndex = 0;
-          player.sentenceStartTime = Date.now();
-          player.remainingTime = 20;
+          const timeoutResetTime = Date.now();
+          player.sentenceStartTime = timeoutResetTime;
 
           io.to(roomCode).emit('roulette_result', {
             playerId: playerId,
             survived: true,
             newOdds: player.rouletteOdds,
             roll: roll,
-            previousOdds: odds
+            previousOdds: odds,
+            sentenceStartTime: timeoutResetTime
           });
         } else {
           player.status = 'DEAD';
@@ -681,7 +657,6 @@ function setupSocketHandlers(io) {
           p.totalMistypes = 0;
           p.currentCharIndex = 0;
           p.sentenceStartTime = null;
-          p.remainingTime = 20;
           p.rouletteHistory = [];
           p.sentenceHistory = [];
           p.averageWPM = 0;
@@ -769,7 +744,6 @@ function setupSocketHandlers(io) {
         if (room.players[socket.playerId].status === 'ALIVE') {
           room.players[socket.playerId].status = 'DISCONNECTED';
           room.players[socket.playerId].disconnectedAt = Date.now();
-          room.players[socket.playerId].pausedTime = room.players[socket.playerId].remainingTime; 
           
           await roomManager.updateRoom(socket.roomCode, room);
 
