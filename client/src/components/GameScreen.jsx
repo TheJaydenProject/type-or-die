@@ -300,7 +300,10 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
         [data.playerId]: {
           ...prev[data.playerId],
           mistakeStrikes: data.strikes,
-          sentenceStartTime: data.sentenceStartTime
+          sentenceStartTime: data.sentenceStartTime,
+          currentWordIndex: data.currentWordIndex,
+          currentCharInWord: data.currentCharInWord,
+          currentCharIndex: data.currentCharIndex
         }
       }));
 
@@ -322,7 +325,7 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
 
     const handleRouletteResult = (data) => {
       if (isSpectator && data.playerId === spectatingPlayerId) {
-        console.log(`Spectator seeing roulette for ${players[data.playerId]?.nickname}`);
+        console.log(`🎰 Spectator seeing roulette for ${players[data.playerId]?.nickname}`);
         setShowRoulette(true);
         setRouletteResult(data);
         
@@ -409,7 +412,11 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
         [data.playerId]: {
           ...prev[data.playerId],
           completedSentences: prev[data.playerId].completedSentences + 1,
-          sentenceStartTime: data.sentenceStartTime
+          currentSentenceIndex: data.newSentenceIndex,
+          sentenceStartTime: data.sentenceStartTime,
+          currentWordIndex: data.currentWordIndex,
+          currentCharInWord: data.currentCharInWord,
+          currentCharIndex: data.currentCharIndex
         }
       }));
     };

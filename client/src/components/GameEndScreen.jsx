@@ -29,10 +29,11 @@ function GameEndScreen({ gameEndData, room, playerId, onMainMenu, onReplay }) {
   const sentences = room.sentences || [];
   
   const calculateGrade = (player) => {
-    if (player.status === 'DEAD') return 'F';
-    const acc = player.totalTypedChars > 0 
-      ? (player.totalCorrectChars / player.totalTypedChars)
-      : 0;
+    if (!player || player.status === 'DEAD') return 'F';
+    
+    if (player.totalTypedChars === 0) return '-';
+    
+    const acc = player.totalCorrectChars / player.totalTypedChars;
     
     if (acc === 1) return 'SS';
     if (acc > 0.98) return 'S';
@@ -76,12 +77,12 @@ function GameEndScreen({ gameEndData, room, playerId, onMainMenu, onReplay }) {
               <div className="stat-row">
                 <span className="stat-label">STATUS</span>
                 <span className={`stat-value ${currentPlayer.status === 'DEAD' ? 'status-dead' : 'status-alive'}`}>
-                  {currentPlayer.status}
+                  {currentPlayer.status || 'SPECTATOR'}
                 </span>
               </div>
               <div className="stat-row">
                 <span className="stat-label">COMPLETION</span>
-                <span className="stat-value">{currentPlayer.completedSentences}/{sentences.length}</span>
+                <span className="stat-value">{currentPlayer.completedSentences || 0}/{sentences.length}</span>
               </div>
               <div className="stat-row">
                 <span className="stat-label">ACCURACY</span>
@@ -93,7 +94,7 @@ function GameEndScreen({ gameEndData, room, playerId, onMainMenu, onReplay }) {
               </div>
               <div className="stat-row">
                 <span className="stat-label">ERRORS</span>
-                <span className="stat-value">{currentPlayer.totalMistypes}</span>
+                <span className="stat-value">{currentPlayer.totalMistypes || 0}</span>
               </div>
             </div>
           </div>
@@ -149,7 +150,7 @@ function GameEndScreen({ gameEndData, room, playerId, onMainMenu, onReplay }) {
                       <span className="row-content">
                         {s.completed ? 'COMPLETED' : `FAILED: ${s.deathReason}`}
                       </span>
-                      <span className="row-stat">{s.wpm} WPM</span>
+                      <span className="row-stat">{s.wpm || 0} WPM</span>
                       <span className="row-stat">{s.timeUsed.toFixed(1)}s</span>
                     </div>
                   ))}
@@ -163,7 +164,7 @@ function GameEndScreen({ gameEndData, room, playerId, onMainMenu, onReplay }) {
                 <div className="data-list">
                   {[...(currentPlayer.rouletteHistory || [])].reverse().map((r, i) => (
                     <div key={i} className={`data-row roulette-row ${r.survived ? 'survived' : 'fatal'}`}>
-                      <span className="row-odds">1/{r.odds}</span>
+                      <span className="row-odds">{r.odds}</span>
                       <span className="row-chamber">[{r.survived ? 'EMPTY' : 'BULLET'}]</span>
                       <span className="row-result">{r.survived ? 'SURVIVED' : 'FATAL'}</span>
                     </div>

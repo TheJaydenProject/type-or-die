@@ -365,10 +365,14 @@ function setupSocketHandlers(io) {
 
               io.to(roomCode).emit('sentence_completed', {
                 playerId: playerId,
-                sentenceIndex: player.currentSentenceIndex - 1,
+                completedSentenceIndex: player.currentSentenceIndex - 1,
+                newSentenceIndex: player.currentSentenceIndex,
                 time: timeUsed,
                 wpm: player.currentSessionWPM,
-                sentenceStartTime: newSentenceStartTime
+                sentenceStartTime: newSentenceStartTime,
+                currentWordIndex: 0,
+                currentCharInWord: 0,
+                currentCharIndex: 0
               });
             }
           }
@@ -438,10 +442,7 @@ function setupSocketHandlers(io) {
           playerId: playerId,
           strikes: player.mistakeStrikes,
           maxStrikes: 3,
-          sentenceStartTime: resetStartTime,
-          currentWordIndex: 0,
-          currentCharInWord: 0,
-          currentCharIndex: 0
+          sentenceStartTime: resetStartTime
         });
 
         if (player.mistakeStrikes >= 3) {
