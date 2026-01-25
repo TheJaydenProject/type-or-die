@@ -27,6 +27,7 @@ yarn-error.log*
 postgres-data/
 redis-data/
 .docker-data/
+docker-compose.yml
 
 # OS Specific
 .DS_Store
