@@ -135,18 +135,14 @@ async function processCharTypedEvent(io, socket, data) {
   const playerId = socket.playerId;
   const { roomCode, char, charIndex } = data;
 
-  // roomManager.atomicCharUpdate handles the specific logic for checking 
-  // if the character is correct and updating counters.
   const updated = await roomManager.atomicCharUpdate(roomCode, playerId, char, charIndex);
   
   if (!updated) {
-    // Update failed (validation error or race condition caught in service)
     return; 
   }
 
   const { room, player, result } = updated;
 
-  // Broadcast the result
   if (result.type === 'CORRECT') {
     io.to(roomCode).emit('player_progress', {
       playerId,
@@ -163,6 +159,8 @@ async function processCharTypedEvent(io, socket, data) {
       sentenceStartTime: player.sentenceStartTime
     });
   } else if (result.type === 'SENTENCE_COMPLETE') {
+    await roomManager.updateRoom(roomCode, room);
+    
     if (player.completedSentences === room.settings.sentenceCount) {
       // WIN CONDITION
       room.status = 'FINISHED';
