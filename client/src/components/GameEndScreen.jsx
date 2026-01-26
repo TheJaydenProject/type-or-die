@@ -135,7 +135,7 @@ function GameEndScreen({ gameEndData, room, playerId, sentences, onMainMenu, onR
                         {p.id === winnerId && <span className="badge-win">[WINNER]</span>}
                         {p.status === 'DEAD' && <span className="badge-dead">[KIA]</span>}
                       </span>
-                      <span className="row-stat">{p.completedSentences}/{sentences.length}</span>
+                      <span className="row-stat">{p.completedSentences}/{totalSentences}</span>
                       <span className="row-stat">{p.averageWPM} WPM</span>
                     </div>
                   ))}
