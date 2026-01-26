@@ -23,7 +23,7 @@ function App() {
 
   useEffect(() => {
     const handleGameEnded = (data) => {
-      console.log('🏁 App.jsx received game_ended:', data);
+      console.log('App.jsx received game_ended:', data);
       
       setCurrentRoom(prev => {
         if (!prev) return prev;
@@ -128,10 +128,14 @@ function App() {
     });
 
     socket.on('replay_started', (data) => {
-      console.log('REPLAY INITIATED');
+      console.log('REPLAY INITIATED - Resetting all client state');
+      console.log('  → Updated room with reset players:', data.room.players);
+      
       setCurrentRoom(data.room);
       setGameEndData(null);
       setUserRole('PLAYER');
+      setSentences([]);
+      setCountdown(null);
       setView('LOBBY');
     });
 
@@ -141,10 +145,14 @@ function App() {
     });
 
     socket.on('game_force_reset', (data) => {
-      console.log('GAME FORCE RESET BY HOST');
+      console.log('GAME FORCE RESET BY HOST - Resetting all client state');
+      console.log('  → Updated room with reset players:', data.room.players);
+      
       setCurrentRoom(data.room);
       setGameEndData(null);
       setUserRole('PLAYER');
+      setSentences([]);
+      setCountdown(null);
       setView('LOBBY');
     });
 
@@ -303,6 +311,10 @@ function App() {
       localStorage.removeItem('type_or_die_session');
       setCurrentRoom(null);
       setPlayerId(null);
+      setSentences([]);
+      setGameEndData(null);
+      setCountdown(null);
+      setUserRole(null);
       setView('MENU');
       setRoomCode('');
     }
@@ -431,6 +443,11 @@ function App() {
     const isHost = currentRoom.hostId === playerId;
     const players = Object.values(currentRoom.players);
 
+    console.log('  LOBBY VIEW DEBUG:');
+    console.log('  Current room players:', currentRoom.players);
+    console.log('  My player ID:', playerId);
+    console.log('  My player status:', currentRoom.players[playerId]?.status);
+
     return (
       <div className="app">
         <div className="container">
@@ -477,6 +494,7 @@ function App() {
                 <div key={player.id} className="player-item">
                   {player.id === currentRoom.hostId && '[HOST] '}
                   {player.nickname}
+                  {player.status === 'DEAD' && ' [DEAD - BUG]'}
                 </div>
               ))}
             </div>
@@ -517,8 +535,15 @@ function App() {
   }
 
   if (view === 'GAME' && currentRoom) {
+    console.log('  GAME VIEW DEBUG:');
+    console.log('  Current room players:', currentRoom.players);
+    console.log('  My player ID:', playerId);
+    console.log('  My player status:', currentRoom.players[playerId]?.status);
+    console.log('  User role:', userRole);
+
     return (
       <GameScreen
+        key={`game-${currentRoom.roomCode}-${currentRoom.gameStartedAt || 'lobby'}`}
         socket={socket}
         room={currentRoom}
         playerId={playerId}
@@ -530,7 +555,7 @@ function App() {
   }
 
   if (view === 'FINISHED' && gameEndData) {
-    console.log('🎨 Rendering GameEndScreen with:', {
+    console.log('Rendering GameEndScreen with:', {
       gameEndData,
       currentRoom,
       playerId
@@ -544,10 +569,22 @@ function App() {
         sentences={sentences}
         onMainMenu={() => {
           localStorage.removeItem('type_or_die_session');
+          setSentences([]);
+          setGameEndData(null);
+          setCountdown(null);
+          setUserRole(null);
           setView('MENU');
         }}
         onReplay={() => {
-          setView('LOBBY');
+          console.log('REPLAY BUTTON CLICKED - Requesting replay from server');
+          socket.emit('request_replay', { roomCode: currentRoom.roomCode }, (response) => {
+            if (response.success) {
+              console.log('Replay request successful');
+            } else {
+              console.error('Replay request failed:', response.error);
+              setError(`ERROR: ${response.error.toUpperCase()}`);
+            }
+          });
         }}
       />
     );

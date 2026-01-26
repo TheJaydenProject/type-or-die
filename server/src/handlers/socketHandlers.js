@@ -10,11 +10,10 @@ import sentenceService from '../services/sentenceService.js';
 const CONSTANTS = {
   COUNTDOWN_DURATION: 3000,
   DISCONNECT_GRACE_PERIOD: 30000,
-  GAME_DURATION_TIMEOUT: 20000, // 20 seconds to type a sentence before death
+  GAME_DURATION_TIMEOUT: 20000,
   MAX_NICKNAME_LENGTH: 20
 };
 
-// Maps to track active timers and queues
 const disconnectTimers = new Map();
 const roomCountdownTimers = new Map();
 const playerEventQueues = new Map();
@@ -23,8 +22,6 @@ const playerEventQueues = new Map();
 // HELPER FUNCTIONS
 // ==========================================
 
-
-// Clears the disconnect timer for a player (used on reconnect).
 function cleanupDisconnectTimer(playerId) {
   if (disconnectTimers.has(playerId)) {
     clearTimeout(disconnectTimers.get(playerId));
@@ -32,8 +29,6 @@ function cleanupDisconnectTimer(playerId) {
   }
 }
 
-
-// Clears the game start countdown (used on force reset or game start).
 function cleanupRoomTimer(roomCode) {
   if (roomCountdownTimers.has(roomCode)) {
     clearTimeout(roomCountdownTimers.get(roomCode));
@@ -41,8 +36,6 @@ function cleanupRoomTimer(roomCode) {
   }
 }
 
-
-// Validates input data structures to fail fast before DB calls.
 function validateInput(type, data) {
   if (!data || typeof data !== 'object') {
     throw new Error('Invalid data format');
@@ -77,7 +70,6 @@ function validateInput(type, data) {
   }
 }
 
-
 function queuePlayerEvent(playerId, eventProcessor) {
   if (!playerEventQueues.has(playerId)) {
     playerEventQueues.set(playerId, Promise.resolve());
@@ -85,7 +77,6 @@ function queuePlayerEvent(playerId, eventProcessor) {
 
   const currentQueue = playerEventQueues.get(playerId);
   
-  // Chain the new operation to the end of the existing promise chain
   const newQueue = currentQueue
     .then(eventProcessor)
     .catch(err => {
@@ -97,14 +88,39 @@ function queuePlayerEvent(playerId, eventProcessor) {
 }
 
 // ==========================================
+// PLAYER STATE RESET UTILITY
+// ==========================================
+
+function resetPlayerToLobbyState(player) {
+  player.status = 'ALIVE';
+  player.currentSentenceIndex = 0;
+  player.rouletteOdds = 6;
+  player.mistakeStrikes = 0;
+  player.completedSentences = 0;
+  player.totalCorrectChars = 0;
+  player.totalTypedChars = 0;
+  player.totalMistypes = 0;
+  player.currentCharIndex = 0;
+  player.currentWordIndex = 0;
+  player.currentCharInWord = 0;
+  player.sentenceStartTime = null;
+  player.rouletteHistory = [];
+  player.sentenceHistory = [];
+  player.averageWPM = 0;
+  player.peakWPM = 0;
+  player.currentSessionWPM = 0;
+  player.sentenceCharCount = 0;
+  player.disconnectedAt = null;
+  player.gracePeriodActive = false;
+}
+
+// ==========================================
 // CORE GAME LOGIC PROCESSORS
-// These functions are called strictly sequentially via queuePlayerEvent
 // ==========================================
 
 async function checkGameOver(io, roomCode, room) {
   const alivePlayers = Object.values(room.players).filter(p => p.status === 'ALIVE');
   
-  // If everyone is dead, end the game immediately
   if (alivePlayers.length === 0) {
     const sortedPlayers = Object.values(room.players).sort((a, b) => {
       if (b.completedSentences !== a.completedSentences) {
@@ -123,12 +139,11 @@ async function checkGameOver(io, roomCode, room) {
       winnerNickname: sortedPlayers[0]?.nickname || 'No One',
       finalStats: room.players
     });
-    return true; // Game Ended
+    return true;
   }
   
-  // Save state if game continues
   await roomManager.updateRoom(roomCode, room);
-  return false; // Game Continues
+  return false;
 }
 
 async function processCharTypedEvent(io, socket, data) {
@@ -162,10 +177,8 @@ async function processCharTypedEvent(io, socket, data) {
     await roomManager.updateRoom(roomCode, room);
     
     if (player.completedSentences === room.settings.sentenceCount) {
-      // WIN CONDITION
       room.status = 'FINISHED';
       cleanupRoomTimer(roomCode);
-      // Room already saved above, update status change only
       await roomManager.updateRoom(roomCode, room);
 
       io.to(roomCode).emit('game_ended', {
@@ -175,7 +188,6 @@ async function processCharTypedEvent(io, socket, data) {
         finalStats: room.players
       });
     } else {
-      // NEXT SENTENCE
       io.to(roomCode).emit('sentence_completed', {
         playerId,
         completedSentenceIndex: player.currentSentenceIndex - 1,
@@ -234,7 +246,6 @@ async function processMistypeEvent(io, socket, data) {
   player.mistakeStrikes = (player.mistakeStrikes || 0) + 1;
   player.totalMistypes++;
 
-  // Reset current sentence progress on strike
   player.currentCharIndex = 0;
   player.currentWordIndex = 0;
   player.currentCharInWord = 0;
@@ -249,7 +260,6 @@ async function processMistypeEvent(io, socket, data) {
     sentenceStartTime: resetStartTime
   });
 
-  // Russian Roulette Logic if 3 strikes
   if (player.mistakeStrikes >= 3) {
     player.mistakeStrikes = 0;
     const odds = player.rouletteOdds;
@@ -265,7 +275,6 @@ async function processMistypeEvent(io, socket, data) {
     });
 
     if (survived) {
-      // Survive: Make game harder (decrease odds)
       player.rouletteOdds = Math.max(2, odds - 1);
       
       io.to(roomCode).emit('roulette_result', {
@@ -277,7 +286,6 @@ async function processMistypeEvent(io, socket, data) {
         sentenceStartTime: resetStartTime
       });
     } else {
-      // Die
       player.status = 'DEAD';
       player.sentenceHistory.push({
         sentenceIndex: sentenceIndex,
@@ -330,7 +338,6 @@ async function processTimeoutEvent(io, socket, data) {
   });
 
   if (survived) {
-    // Survive: Reset sentence
     player.rouletteOdds = Math.max(2, odds - 1);
     player.currentCharIndex = 0;
     const timeoutResetTime = Date.now();
@@ -347,7 +354,6 @@ async function processTimeoutEvent(io, socket, data) {
     
     await roomManager.updateRoom(roomCode, room);
   } else {
-    // Die
     player.status = 'DEAD';
     player.sentenceHistory.push({
       sentenceIndex: sentenceIndex,
@@ -380,8 +386,6 @@ async function processTimeoutEvent(io, socket, data) {
 export default function setupSocketHandlers(io) {
   io.on('connection', (socket) => {
     console.log(`Client connected: ${socket.id}`);
-
-    // --- LOBBY EVENTS ---
 
     socket.on('create_room', async (data, callback) => {
       try {
@@ -461,7 +465,6 @@ export default function setupSocketHandlers(io) {
           await roomManager.updateRoom(room.roomCode, room);
         }
 
-        // Mid-game join (Spectator Sync)
         if (role === 'SPECTATOR' && (room.status === 'PLAYING' || room.status === 'COUNTDOWN')) {
           socket.emit('sync_game_state', {
             status: room.status,
@@ -575,8 +578,6 @@ export default function setupSocketHandlers(io) {
       }
     });
 
-    // --- GAME CONTROL EVENTS ---
-
     socket.on('start_game', async (data, callback) => {
       try {
         validateInput('roomCode', data);
@@ -590,7 +591,6 @@ export default function setupSocketHandlers(io) {
         const playerCount = Object.keys(room.players).length;
         if (playerCount < 1) return callback({ success: false, error: 'Need at least 1 player' });
 
-        // Ensure no previous countdowns are running
         cleanupRoomTimer(roomCode);
 
         room.status = 'COUNTDOWN';
@@ -598,26 +598,8 @@ export default function setupSocketHandlers(io) {
         const sentences = await sentenceService.selectSentences(room.settings.sentenceCount);
         room.sentences = sentences;
 
-        // Reset all player stats for fresh game
         Object.keys(room.players).forEach(pId => {
-          const player = room.players[pId];
-          player.status = 'ALIVE';
-          player.currentSentenceIndex = 0;
-          player.rouletteOdds = 6;
-          player.mistakeStrikes = 0;
-          player.completedSentences = 0;
-          player.totalCorrectChars = 0;
-          player.totalTypedChars = 0;
-          player.totalMistypes = 0;
-          player.currentCharIndex = 0;
-          player.currentWordIndex = 0;
-          player.currentCharInWord = 0; 
-          player.sentenceStartTime = null;
-          player.rouletteHistory = [];
-          player.sentenceHistory = [];
-          player.averageWPM = 0;
-          player.peakWPM = 0;
-          player.currentSessionWPM = 0;
+          resetPlayerToLobbyState(room.players[pId]);
         });
 
         await roomManager.updateRoom(roomCode, room);
@@ -631,11 +613,9 @@ export default function setupSocketHandlers(io) {
 
         console.log(`Game starting: ${roomCode} (${playerCount} players)`);
 
-        // Start game after delay
         const timerId = setTimeout(async () => {
           try {
             const updatedRoom = await roomManager.getRoom(roomCode);
-            // Verify room is still in countdown (hasn't been reset/deleted)
             if (updatedRoom && updatedRoom.status === 'COUNTDOWN') {
               updatedRoom.status = 'PLAYING';
               updatedRoom.gameStartedAt = Date.now();
@@ -685,7 +665,6 @@ export default function setupSocketHandlers(io) {
         
         cleanupRoomTimer(roomCode);
 
-        // Recover spectators to player list
         const spectatorSocketMap = new Map();
         const roomSockets = await io.in(roomCode).fetchSockets();
         
@@ -738,24 +717,7 @@ export default function setupSocketHandlers(io) {
         room.spectators = [];
 
         Object.keys(room.players).forEach(pId => {
-          const p = room.players[pId];
-          p.status = 'ALIVE';
-          p.currentSentenceIndex = 0;
-          p.rouletteOdds = 6;
-          p.mistakeStrikes = 0;
-          p.completedSentences = 0;
-          p.totalCorrectChars = 0;
-          p.totalTypedChars = 0;
-          p.totalMistypes = 0;
-          p.currentCharIndex = 0;
-          p.currentWordIndex = 0;
-          p.currentCharInWord = 0;
-          p.sentenceStartTime = null;
-          p.rouletteHistory = [];
-          p.sentenceHistory = [];
-          p.averageWPM = 0;
-          p.peakWPM = 0;
-          p.currentSessionWPM = 0;
+          resetPlayerToLobbyState(room.players[pId]);
         });
 
         await roomManager.updateRoom(roomCode, room);
@@ -770,8 +732,6 @@ export default function setupSocketHandlers(io) {
       }
     });
 
-    // --- GAMEPLAY EVENTS (QUEUED) ---
-
     socket.on('char_typed', async (data) => {
       try {
         const playerId = socket.playerId;
@@ -782,7 +742,6 @@ export default function setupSocketHandlers(io) {
         validateInput('charIndex', data);
         validateInput('roomCode', data); 
 
-        // Add to queue to ensure serial processing against mistypes
         await queuePlayerEvent(playerId, () => processCharTypedEvent(io, socket, data));
 
       } catch (error) {
@@ -801,7 +760,6 @@ export default function setupSocketHandlers(io) {
         validateInput('roomCode', data);
         validateInput('sentenceIndex', data);
         
-        // Add to queue
         await queuePlayerEvent(playerId, () => processMistypeEvent(io, socket, data));
 
       } catch (error) {
@@ -820,7 +778,6 @@ export default function setupSocketHandlers(io) {
         validateInput('roomCode', data);
         validateInput('sentenceIndex', data);
         
-        // Add to queue
         await queuePlayerEvent(playerId, () => processTimeoutEvent(io, socket, data));
 
       } catch (error) {
@@ -828,8 +785,6 @@ export default function setupSocketHandlers(io) {
         socket.emit('event_error', { event: 'sentence_timeout', error: error.message });
       }
     });
-
-    // --- REPLAY & RECONNECT EVENTS ---
 
     socket.on('request_replay', async (data, callback) => {
       try {
@@ -847,7 +802,6 @@ export default function setupSocketHandlers(io) {
         
         cleanupRoomTimer(roomCode);
 
-        // Clear queues/timers for all players
         Object.keys(room.players).forEach(pId => {
           cleanupDisconnectTimer(pId);
           playerEventQueues.delete(pId);
@@ -857,26 +811,8 @@ export default function setupSocketHandlers(io) {
         room.sentences = [];
         room.gameStartedAt = null;
 
-        // Reset player states
         Object.keys(room.players).forEach(pId => {
-          const p = room.players[pId];
-          p.status = 'ALIVE';
-          p.currentSentenceIndex = 0;
-          p.rouletteOdds = 6;
-          p.mistakeStrikes = 0;
-          p.completedSentences = 0;
-          p.totalCorrectChars = 0;
-          p.totalTypedChars = 0;
-          p.totalMistypes = 0;
-          p.currentCharIndex = 0;
-          p.currentWordIndex = 0;
-          p.currentCharInWord = 0;
-          p.sentenceStartTime = null;
-          p.rouletteHistory = [];
-          p.sentenceHistory = [];
-          p.averageWPM = 0;
-          p.peakWPM = 0;
-          p.currentSessionWPM = 0;
+          resetPlayerToLobbyState(room.players[pId]);
         });
 
         await roomManager.updateRoom(roomCode, room);
@@ -942,7 +878,6 @@ export default function setupSocketHandlers(io) {
             sentences: updatedRoom.sentences || []
           });
 
-          // Send current progress of all players to the reconnected user
           Object.keys(updatedRoom.players).forEach(pId => {
             const p = updatedRoom.players[pId];
             socket.emit('player_progress', {
@@ -988,7 +923,6 @@ export default function setupSocketHandlers(io) {
           }
 
           if (room.players[socket.playerId].status === 'ALIVE') {
-            // Mark as disconnected to allow grace period
             room.players[socket.playerId].status = 'DISCONNECTED';
             room.players[socket.playerId].disconnectedAt = Date.now();
             
@@ -1006,10 +940,8 @@ export default function setupSocketHandlers(io) {
                 if (freshRoom && freshRoom.players[socket.playerId]?.status === 'DISCONNECTED') {
                   console.log(`Grace period expired for ${socket.playerId}`);
                   
-                  // Clean up queues
                   playerEventQueues.delete(socket.playerId);
                   
-                  // Remove player permanently
                   const result = await roomManager.removePlayer(socket.roomCode, socket.playerId);
                   if (result && !result.deleted && result.room) {
                     io.to(socket.roomCode).emit('player_left', { 
@@ -1028,7 +960,6 @@ export default function setupSocketHandlers(io) {
             
             disconnectTimers.set(socket.playerId, timeoutId);
           } else {
-            // If spectator or already dead, clean up immediately
             cleanupDisconnectTimer(socket.playerId);
             playerEventQueues.delete(socket.playerId);
           }

@@ -461,7 +461,10 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
         });
         return updatedPlayers;
       });
-      setShowVictory(true);
+      
+      if (data.winnerId === playerId && data.reason === 'COMPLETION') {
+        setShowVictory(true);
+      }
     };
 
     socket.on('player_progress', handlePlayerProgress);
