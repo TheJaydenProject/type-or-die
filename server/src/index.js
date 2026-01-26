@@ -1,31 +1,36 @@
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const cors = require('cors');
-const setupSocketHandlers = require('./handlers/socketHandlers');
-require('dotenv').config();
+import express from 'express';
+import http from 'http';
+import { Server } from 'socket.io';
+import cors from 'cors';
+import 'dotenv/config';
 
+import setupSocketHandlers from './handlers/socketHandlers.js';
+import redis from './config/redis.js';
+import db from './config/database.js';
+import roomManager from './services/roomManager.js';
+
+// Validate critical environment variables before booting
 const requiredEnvVars = ['DB_PASSWORD', 'DB_HOST', 'DB_NAME'];
 const missing = requiredEnvVars.filter(key => !process.env[key]);
 
 if (missing.length > 0) {
-  console.error(`Missing required environment variables: ${missing.join(', ')}`);
-  console.error('Create a .env file with these variables.');
+  console.error(`FATAL: Missing required environment variables: ${missing.join(', ')}`);
   process.exit(1);
 }
 
 const app = express();
 const server = http.createServer(app);
+const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  origin: CLIENT_URL,
   credentials: true
 }));
 app.use(express.json());
 
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    origin: CLIENT_URL,
     credentials: true
   },
   maxHttpBufferSize: 1e6,
@@ -39,55 +44,64 @@ setupSocketHandlers(io);
 
 app.get('/health', async (req, res) => {
   try {
-    const redis = require('./config/redis');
-    const db = require('./config/database');
-    
+    // Parallelize checks to minimize latency
     const [redisCheck, dbCheck] = await Promise.all([
       redis.ping().then(() => true).catch(() => false),
       db.query('SELECT 1').then(() => true).catch(() => false)
     ]);
     
-    const roomCount = await redis.get('global:room_count') || 0;
+    // Redis values come back as strings, must parse safely
+    const rawRoomCount = await redis.get('global:room_count');
+    const roomCount = rawRoomCount ? parseInt(rawRoomCount, 10) : 0;
     
+    const isHealthy = redisCheck && dbCheck;
+
+    if (!isHealthy) {
+        // Return 503 Service Unavailable if dependencies are down
+        return res.status(503).json({
+            status: 'degraded',
+            services: {
+                redis: redisCheck ? 'up' : 'down',
+                postgres: dbCheck ? 'up' : 'down'
+            }
+        });
+    }
+
     res.json({
-      status: redisCheck && dbCheck ? 'healthy' : 'degraded',
+      status: 'healthy',
       timestamp: Date.now(),
       uptime: process.uptime(),
-      services: {
-        redis: redisCheck ? 'up' : 'down',
-        postgres: dbCheck ? 'up' : 'down'
-      },
-      metrics: {
-        activeRooms: parseInt(roomCount)
-      }
+      services: { redis: 'up', postgres: 'up' },
+      metrics: { activeRooms: roomCount }
     });
   } catch (error) {
-    res.status(503).json({
+    console.error('Health Check Failure:', error);
+    res.status(500).json({
       status: 'error',
-      error: error.message
+      error: 'Internal Health Check Failure'
     });
   }
 });
 
 app.get('/api/stats', async (req, res) => {
-  const redis = require('./config/redis');
   try {
-    const roomCount = await redis.get('global:room_count') || 0;
+    const rawRoomCount = await redis.get('global:room_count');
     res.json({
-      activeRooms: parseInt(roomCount),
+      activeRooms: rawRoomCount ? parseInt(rawRoomCount, 10) : 0,
       uptime: process.uptime()
     });
   } catch (error) {
+    console.error('Stats Error:', error);
     res.status(500).json({ error: 'Failed to fetch stats' });
   }
 });
 
 app.get('/api/metrics', async (req, res) => {
-  const roomManager = require('./services/roomManager');
   try {
     const metrics = await roomManager.getMetrics();
     res.json(metrics);
   } catch (error) {
+    console.error('Metrics Error:', error);
     res.status(500).json({ error: 'Failed to fetch metrics' });
   }
 });
@@ -98,16 +112,27 @@ server.listen(PORT, () => {
   console.log(`Type or Die - Server Started`);
   console.log(`${'='.repeat(50)}`);
   console.log(`Server:     http://localhost:${PORT}`);
-  console.log(`Socket.io:  Ready for connections`);
-  console.log(`Redis:      Connected`);
-  console.log(`PostgreSQL: Connected`);
+  console.log(`Socket.io:  Ready`);
   console.log(`${'='.repeat(50)}\n`);
 });
 
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received, closing server...');
-  server.close(() => {
-    console.log('Server closed');
+// Shutdown for preventing data loss in Redis/DB
+process.on('SIGTERM', async () => {
+  console.log('SIGTERM received. Starting graceful shutdown...');
+  
+  server.close(async () => {
+    console.log('HTTP/Socket server closed.');
+    
+    try {
+        // Close DB connections if the drivers support it
+        // Assuming standard interface for redis/pg
+        if (typeof redis.quit === 'function') await redis.quit();
+        if (typeof db.end === 'function') await db.end();
+        console.log('Database connections closed.');
+    } catch (err) {
+        console.error('Error during database cleanup:', err);
+    }
+    
     process.exit(0);
   });
 });

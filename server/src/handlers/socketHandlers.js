@@ -1,8 +1,30 @@
-const roomManager = require('../services/roomManager');
-const { v4: uuidv4 } = require('uuid');
-const crypto = require('crypto');
-const disconnectTimers = new Map();
+import { v4 as uuidv4 } from 'uuid';
+import crypto from 'crypto';
+import roomManager from '../services/roomManager.js';
+import sentenceService from '../services/sentenceService.js';
 
+// ==========================================
+// CONSTANTS & STATE MANAGEMENT
+// ==========================================
+
+const CONSTANTS = {
+  COUNTDOWN_DURATION: 3000,
+  DISCONNECT_GRACE_PERIOD: 30000,
+  GAME_DURATION_TIMEOUT: 20000, // 20 seconds to type a sentence before death
+  MAX_NICKNAME_LENGTH: 20
+};
+
+// Maps to track active timers and queues
+const disconnectTimers = new Map();
+const roomCountdownTimers = new Map();
+const playerEventQueues = new Map();
+
+// ==========================================
+// HELPER FUNCTIONS
+// ==========================================
+
+
+// Clears the disconnect timer for a player (used on reconnect).
 function cleanupDisconnectTimer(playerId) {
   if (disconnectTimers.has(playerId)) {
     clearTimeout(disconnectTimers.get(playerId));
@@ -10,21 +32,366 @@ function cleanupDisconnectTimer(playerId) {
   }
 }
 
-function setupSocketHandlers(io) {
+
+// Clears the game start countdown (used on force reset or game start).
+function cleanupRoomTimer(roomCode) {
+  if (roomCountdownTimers.has(roomCode)) {
+    clearTimeout(roomCountdownTimers.get(roomCode));
+    roomCountdownTimers.delete(roomCode);
+  }
+}
+
+
+// Validates input data structures to fail fast before DB calls.
+function validateInput(type, data) {
+  if (!data || typeof data !== 'object') {
+    throw new Error('Invalid data format');
+  }
+
+  switch (type) {
+    case 'roomCode':
+      if (!data.roomCode || typeof data.roomCode !== 'string' || data.roomCode.length !== 6) {
+        throw new Error('Invalid room code');
+      }
+      break;
+    case 'playerId':
+      if (!data.playerId || typeof data.playerId !== 'string' || !/^[a-f0-9-]{36}$/.test(data.playerId)) {
+        throw new Error('Invalid player ID');
+      }
+      break;
+    case 'nickname':
+      if (!data.nickname || typeof data.nickname !== 'string' || !data.nickname.trim()) {
+        throw new Error('Invalid nickname');
+      }
+      break;
+    case 'sentenceIndex':
+      if (typeof data.sentenceIndex !== 'number' || data.sentenceIndex < 0) {
+        throw new Error('Invalid sentence index');
+      }
+      break;
+    case 'charIndex':
+      if (typeof data.charIndex !== 'number' || data.charIndex < 0) {
+        throw new Error('Invalid character index');
+      }
+      break;
+  }
+}
+
+
+function queuePlayerEvent(playerId, eventProcessor) {
+  if (!playerEventQueues.has(playerId)) {
+    playerEventQueues.set(playerId, Promise.resolve());
+  }
+
+  const currentQueue = playerEventQueues.get(playerId);
+  
+  // Chain the new operation to the end of the existing promise chain
+  const newQueue = currentQueue
+    .then(eventProcessor)
+    .catch(err => {
+      console.error(`Event queue error for player ${playerId}:`, err);
+    });
+
+  playerEventQueues.set(playerId, newQueue);
+  return newQueue;
+}
+
+// ==========================================
+// CORE GAME LOGIC PROCESSORS
+// These functions are called strictly sequentially via queuePlayerEvent
+// ==========================================
+
+async function checkGameOver(io, roomCode, room) {
+  const alivePlayers = Object.values(room.players).filter(p => p.status === 'ALIVE');
+  
+  // If everyone is dead, end the game immediately
+  if (alivePlayers.length === 0) {
+    const sortedPlayers = Object.values(room.players).sort((a, b) => {
+      if (b.completedSentences !== a.completedSentences) {
+        return b.completedSentences - a.completedSentences;
+      }
+      return b.totalCorrectChars - a.totalCorrectChars;
+    });
+
+    room.status = 'FINISHED';
+    cleanupRoomTimer(roomCode);
+    await roomManager.updateRoom(roomCode, room);
+
+    io.to(roomCode).emit('game_ended', {
+      reason: 'ALL_DEAD',
+      winnerId: sortedPlayers[0]?.id || null,
+      winnerNickname: sortedPlayers[0]?.nickname || 'No One',
+      finalStats: room.players
+    });
+    return true; // Game Ended
+  }
+  
+  // Save state if game continues
+  await roomManager.updateRoom(roomCode, room);
+  return false; // Game Continues
+}
+
+async function processCharTypedEvent(io, socket, data) {
+  const playerId = socket.playerId;
+  const { roomCode, char, charIndex } = data;
+
+  // roomManager.atomicCharUpdate handles the specific logic for checking 
+  // if the character is correct and updating counters.
+  const updated = await roomManager.atomicCharUpdate(roomCode, playerId, char, charIndex);
+  
+  if (!updated) {
+    // Update failed (validation error or race condition caught in service)
+    return; 
+  }
+
+  const { room, player, result } = updated;
+
+  // Broadcast the result
+  if (result.type === 'CORRECT') {
+    io.to(roomCode).emit('player_progress', {
+      playerId,
+      charIndex: player.currentCharIndex,
+      sentenceIndex: player.currentSentenceIndex,
+      currentWordIndex: result.wordIndex,
+      currentCharInWord: result.charInWord,
+      completedSentences: player.completedSentences,
+      totalCorrectChars: player.totalCorrectChars,
+      totalTypedChars: player.totalTypedChars,
+      totalMistypes: player.totalMistypes,
+      wpm: player.currentSessionWPM,
+      status: player.status,
+      sentenceStartTime: player.sentenceStartTime
+    });
+  } else if (result.type === 'SENTENCE_COMPLETE') {
+    if (player.completedSentences === room.settings.sentenceCount) {
+      // WIN CONDITION
+      room.status = 'FINISHED';
+      cleanupRoomTimer(roomCode);
+      await roomManager.updateRoom(roomCode, room);
+
+      io.to(roomCode).emit('game_ended', {
+        reason: 'COMPLETION',
+        winnerId: playerId,
+        winnerNickname: player.nickname,
+        finalStats: room.players
+      });
+    } else {
+      // NEXT SENTENCE
+      io.to(roomCode).emit('sentence_completed', {
+        playerId,
+        completedSentenceIndex: player.currentSentenceIndex - 1,
+        newSentenceIndex: player.currentSentenceIndex,
+        time: result.timeUsed,
+        wpm: player.currentSessionWPM,
+        sentenceStartTime: result.newSentenceStartTime,
+        currentWordIndex: 0,
+        currentCharInWord: 0,
+        currentCharIndex: 0
+      });
+
+      io.to(roomCode).emit('player_progress', {
+        playerId,
+        charIndex: 0,
+        sentenceIndex: player.currentSentenceIndex,
+        currentWordIndex: 0,
+        currentCharInWord: 0,
+        completedSentences: player.completedSentences,
+        totalCorrectChars: player.totalCorrectChars,
+        totalTypedChars: player.totalTypedChars,
+        totalMistypes: player.totalMistypes,
+        wpm: player.currentSessionWPM,
+        status: player.status,
+        sentenceStartTime: result.newSentenceStartTime
+      });
+    }
+  } else if (result.type === 'MISTYPE') {
+    io.to(roomCode).emit('player_progress', {
+      playerId,
+      charIndex: player.currentCharIndex,
+      sentenceIndex: player.currentSentenceIndex,
+      currentWordIndex: player.currentWordIndex || 0,
+      currentCharInWord: player.currentCharInWord || 0,
+      completedSentences: player.completedSentences,
+      totalCorrectChars: player.totalCorrectChars,
+      totalTypedChars: player.totalTypedChars,
+      totalMistypes: player.totalMistypes,
+      wpm: player.currentSessionWPM,
+      status: player.status,
+      sentenceStartTime: player.sentenceStartTime
+    });
+  }
+}
+
+async function processMistypeEvent(io, socket, data) {
+  const playerId = socket.playerId;
+  const { roomCode, sentenceIndex } = data;
+
+  const room = await roomManager.getRoom(roomCode);
+  if (!room || room.status !== 'PLAYING') return;
+
+  const player = room.players[playerId];
+  if (!player || player.status !== 'ALIVE') return;
+
+  player.mistakeStrikes = (player.mistakeStrikes || 0) + 1;
+  player.totalMistypes++;
+
+  // Reset current sentence progress on strike
+  player.currentCharIndex = 0;
+  player.currentWordIndex = 0;
+  player.currentCharInWord = 0;
+  
+  const resetStartTime = Date.now();
+  player.sentenceStartTime = resetStartTime;
+
+  io.to(roomCode).emit('player_strike', {
+    playerId: playerId,
+    strikes: player.mistakeStrikes,
+    maxStrikes: 3,
+    sentenceStartTime: resetStartTime
+  });
+
+  // Russian Roulette Logic if 3 strikes
+  if (player.mistakeStrikes >= 3) {
+    player.mistakeStrikes = 0;
+    const odds = player.rouletteOdds;
+    const roll = crypto.randomInt(1, odds + 1);
+    const survived = roll > 1;
+
+    player.rouletteHistory.push({
+      sentenceIndex: sentenceIndex,
+      odds: `1/${odds}`,
+      survived: survived,
+      roll: roll,
+      timestamp: Date.now()
+    });
+
+    if (survived) {
+      // Survive: Make game harder (decrease odds)
+      player.rouletteOdds = Math.max(2, odds - 1);
+      
+      io.to(roomCode).emit('roulette_result', {
+        playerId: playerId,
+        survived: true,
+        newOdds: player.rouletteOdds,
+        roll: roll,
+        previousOdds: odds,
+        sentenceStartTime: resetStartTime
+      });
+    } else {
+      // Die
+      player.status = 'DEAD';
+      player.sentenceHistory.push({
+        sentenceIndex: sentenceIndex,
+        completed: false,
+        deathReason: 'MISTYPE',
+        timeUsed: (Date.now() - player.sentenceStartTime) / 1000
+      });
+
+      io.to(roomCode).emit('roulette_result', {
+        playerId: playerId,
+        survived: false,
+        newOdds: odds,
+        roll: roll,
+        previousOdds: odds
+      });
+
+      io.to(roomCode).emit('player_died', {
+        playerId: playerId,
+        deathReason: 'MISTYPE'
+      });
+
+      await checkGameOver(io, roomCode, room);
+      return; 
+    }
+  }
+
+  await roomManager.updateRoom(roomCode, room);
+}
+
+async function processTimeoutEvent(io, socket, data) {
+  const playerId = socket.playerId;
+  const { roomCode, sentenceIndex } = data;
+
+  const room = await roomManager.getRoom(roomCode);
+  if (!room || room.status !== 'PLAYING') return;
+
+  const player = room.players[playerId];
+  if (!player || player.status !== 'ALIVE') return;
+
+  const odds = player.rouletteOdds;
+  const roll = crypto.randomInt(1, odds + 1);
+  const survived = roll > 1;
+  
+  player.rouletteHistory.push({
+    sentenceIndex: sentenceIndex,
+    odds: `1/${odds}`,
+    survived: survived,
+    roll: roll,
+    timestamp: Date.now()
+  });
+
+  if (survived) {
+    // Survive: Reset sentence
+    player.rouletteOdds = Math.max(2, odds - 1);
+    player.currentCharIndex = 0;
+    const timeoutResetTime = Date.now();
+    player.sentenceStartTime = timeoutResetTime;
+
+    io.to(roomCode).emit('roulette_result', {
+      playerId: playerId,
+      survived: true,
+      newOdds: player.rouletteOdds,
+      roll: roll,
+      previousOdds: odds,
+      sentenceStartTime: timeoutResetTime
+    });
+    
+    await roomManager.updateRoom(roomCode, room);
+  } else {
+    // Die
+    player.status = 'DEAD';
+    player.sentenceHistory.push({
+      sentenceIndex: sentenceIndex,
+      completed: false,
+      deathReason: 'TIMEOUT',
+      timeUsed: CONSTANTS.GAME_DURATION_TIMEOUT / 1000
+    });
+
+    io.to(roomCode).emit('roulette_result', {
+      playerId: playerId,
+      survived: false,
+      newOdds: odds,
+      roll: roll,
+      previousOdds: odds
+    });
+
+    io.to(roomCode).emit('player_died', {
+      playerId: playerId,
+      deathReason: 'TIMEOUT'
+    });
+
+    await checkGameOver(io, roomCode, room);
+  }
+}
+
+// ==========================================
+// SOCKET HANDLER SETUP
+// ==========================================
+
+export default function setupSocketHandlers(io) {
   io.on('connection', (socket) => {
     console.log(`Client connected: ${socket.id}`);
+
+    // --- LOBBY EVENTS ---
 
     socket.on('create_room', async (data, callback) => {
       try {
         roomManager.validateEventData('create_room', data);
+        validateInput('nickname', data);
 
         const { nickname, settings } = data;
         const ipAddress = socket.handshake.address;
         const playerId = uuidv4();
-
-        if (!nickname || nickname.trim().length === 0) {
-          return callback({ success: false, error: 'Nickname is required' });
-        }
 
         if (!settings || !settings.sentenceCount) {
           return callback({ success: false, error: 'Invalid settings' });
@@ -32,7 +399,7 @@ function setupSocketHandlers(io) {
 
         const room = await roomManager.createRoom(
           playerId,
-          nickname.trim().substring(0, 20),
+          nickname.trim().substring(0, CONSTANTS.MAX_NICKNAME_LENGTH),
           settings,
           ipAddress
         );
@@ -40,7 +407,7 @@ function setupSocketHandlers(io) {
         socket.join(room.roomCode);
         socket.playerId = playerId;
         socket.roomCode = room.roomCode;
-
+        
         room.players[playerId].socketId = socket.id;
         await roomManager.updateRoom(room.roomCode, room);
 
@@ -63,6 +430,7 @@ function setupSocketHandlers(io) {
     socket.on('join_room', async (data, callback) => {
       try {
         roomManager.validateEventData('join_room', data);
+        validateInput('nickname', data);
 
         const { roomCode, nickname } = data;
         const ipAddress = socket.handshake.address;
@@ -70,10 +438,6 @@ function setupSocketHandlers(io) {
 
         if (!roomCode || roomCode.length !== 6) {
           return callback({ success: false, error: 'Invalid room code' });
-        }
-
-        if (!nickname || nickname.trim().length === 0) {
-          return callback({ success: false, error: 'Nickname is required' });
         }
 
         const roomExists = await roomManager.roomExists(roomCode.toUpperCase());
@@ -84,21 +448,29 @@ function setupSocketHandlers(io) {
         const { room, role } = await roomManager.addPlayer(
           roomCode.toUpperCase(),
           playerId,
-          nickname.trim().substring(0, 20),
+          nickname.trim().substring(0, CONSTANTS.MAX_NICKNAME_LENGTH),
           ipAddress
         );
 
         socket.join(room.roomCode);
         socket.playerId = playerId;
         socket.roomCode = room.roomCode;
-        socket.nickname = nickname.trim().substring(0, 20);
+        socket.nickname = nickname.trim().substring(0, CONSTANTS.MAX_NICKNAME_LENGTH);
 
         if (role === 'PLAYER') {
           room.players[playerId].socketId = socket.id;
           await roomManager.updateRoom(room.roomCode, room);
         }
 
+        // Mid-game join (Spectator Sync)
         if (role === 'SPECTATOR' && (room.status === 'PLAYING' || room.status === 'COUNTDOWN')) {
+          socket.emit('sync_game_state', {
+            status: room.status,
+            gameStartedAt: room.gameStartedAt,
+            settings: room.settings,
+            sentences: room.sentences || []
+          });
+
           Object.keys(room.players).forEach(pId => {
             const p = room.players[pId];
             socket.emit('player_progress', {
@@ -113,20 +485,16 @@ function setupSocketHandlers(io) {
               totalMistypes: p.totalMistypes || 0,
               wpm: p.averageWPM || 0,
               status: p.status || 'ALIVE',
-              sentenceStartTime: p.sentenceStartTime
+              sentenceStartTime: p.sentenceStartTime,
+              mistakeStrikes: p.mistakeStrikes || 0,
+              rouletteOdds: p.rouletteOdds || 6
             });
           });
-
-          if (room.sentences && room.sentences.length > 0) {
-            socket.emit('sync_sentences', {
-              sentences: room.sentences
-            });
-          }
         }
 
         socket.to(room.roomCode).emit('player_joined', {
           playerId: playerId,
-          nickname: nickname.trim().substring(0, 20),
+          nickname: nickname.trim().substring(0, CONSTANTS.MAX_NICKNAME_LENGTH),
           role: role,
           updatedPlayers: Object.values(room.players)
         });
@@ -147,41 +515,50 @@ function setupSocketHandlers(io) {
       }
     });
 
-    socket.on('leave_room', async (data) => {
-      const { roomCode } = data;
-      const playerId = socket.playerId;
-      if (!roomCode || !playerId) return;
+    socket.on('leave_room', async (data, callback) => {
+      try {
+        validateInput('roomCode', data);
+        const { roomCode } = data;
+        const playerId = socket.playerId;
+        
+        if (!playerId) {
+          return callback?.({ success: false, error: 'Not in a room' });
+        }
 
-      cleanupDisconnectTimer(playerId);
+        cleanupDisconnectTimer(playerId);
+        playerEventQueues.delete(playerId);
 
-      const result = await roomManager.removePlayer(roomCode, playerId);
+        const result = await roomManager.removePlayer(roomCode, playerId);
 
-      if (result && !result.deleted && result.room) {
-        socket.to(roomCode).emit('player_left', {
-          playerId,
-          updatedPlayers: Object.values(result.room.players),
-          newHostId: result.room.hostId
-        });
+        if (result && !result.deleted && result.room) {
+          socket.to(roomCode).emit('player_left', {
+            playerId,
+            updatedPlayers: Object.values(result.room.players),
+            newHostId: result.room.hostId
+          });
+        }
+        
+        socket.leave(roomCode);
+        delete socket.playerId;
+        delete socket.roomCode;
+
+        callback?.({ success: true });
+
+      } catch (error) {
+        console.error('Leave room error:', error.message);
+        callback?.({ success: false, error: error.message });
       }
-      
-      socket.leave(roomCode);
-      delete socket.playerId;
-      delete socket.roomCode;
     });
 
     socket.on('change_settings', async (data, callback) => {
       try {
+        validateInput('roomCode', data);
         const { roomCode, sentenceCount } = data;
         const playerId = socket.playerId;
 
         const room = await roomManager.getRoom(roomCode);
-        if (!room) {
-          return callback({ success: false, error: 'Room not found' });
-        }
-
-        if (room.hostId !== playerId) {
-          return callback({ success: false, error: 'Only host can change settings' });
-        }
+        if (!room) return callback({ success: false, error: 'Room not found' });
+        if (room.hostId !== playerId) return callback({ success: false, error: 'Only host can change settings' });
 
         if (sentenceCount < 5 || sentenceCount > 100 || sentenceCount % 5 !== 0) {
           return callback({ success: false, error: 'Invalid sentence count' });
@@ -190,11 +567,7 @@ function setupSocketHandlers(io) {
         room.settings.sentenceCount = sentenceCount;
         await roomManager.updateRoom(roomCode, room);
 
-        io.to(roomCode).emit('settings_updated', {
-          sentenceCount: sentenceCount
-        });
-
-        console.log(`Settings updated: ${roomCode} -> ${sentenceCount} sentences`);
+        io.to(roomCode).emit('settings_updated', { sentenceCount });
         callback({ success: true });
 
       } catch (error) {
@@ -203,34 +576,30 @@ function setupSocketHandlers(io) {
       }
     });
 
+    // --- GAME CONTROL EVENTS ---
+
     socket.on('start_game', async (data, callback) => {
       try {
+        validateInput('roomCode', data);
         const { roomCode } = data;
         const playerId = socket.playerId;
 
         const room = await roomManager.getRoom(roomCode);
-        if (!room) {
-          return callback({ success: false, error: 'Room not found' });
-        }
-
-        if (room.hostId !== playerId) {
-          return callback({ success: false, error: 'Only host can start game' });
-        }
+        if (!room) return callback({ success: false, error: 'Room not found' });
+        if (room.hostId !== playerId) return callback({ success: false, error: 'Only host can start game' });
 
         const playerCount = Object.keys(room.players).length;
-        if (playerCount < 1) {
-          return callback({ success: false, error: 'Need at least 1 player' });
-        }
+        if (playerCount < 1) return callback({ success: false, error: 'Need at least 1 player' });
+
+        // Ensure no previous countdowns are running
+        cleanupRoomTimer(roomCode);
 
         room.status = 'COUNTDOWN';
-        await roomManager.updateRoom(roomCode, room);
-
-        const sentenceService = require('../services/sentenceService');
-        const sentences = await sentenceService.selectSentences(
-          room.settings.sentenceCount
-        );
+        
+        const sentences = await sentenceService.selectSentences(room.settings.sentenceCount);
         room.sentences = sentences;
 
+        // Reset all player stats for fresh game
         Object.keys(room.players).forEach(pId => {
           const player = room.players[pId];
           player.status = 'ALIVE';
@@ -258,32 +627,42 @@ function setupSocketHandlers(io) {
         io.to(roomCode).emit('countdown_start', {
           sentences: sentences,
           startTime: countdownStartTime,
-          duration: 3000
+          duration: CONSTANTS.COUNTDOWN_DURATION
         });
 
-        console.log(`Game starting: ${roomCode} (${playerCount} players, ${sentences.length} sentences)`);
+        console.log(`Game starting: ${roomCode} (${playerCount} players)`);
 
-        setTimeout(async () => {
-          const updatedRoom = await roomManager.getRoom(roomCode);
-          if (updatedRoom && updatedRoom.status === 'COUNTDOWN') {
-            updatedRoom.status = 'PLAYING';
-            updatedRoom.gameStartedAt = Date.now();
-            
-            const gameStartTime = Date.now();
-            Object.keys(updatedRoom.players).forEach(pId => {
-              updatedRoom.players[pId].sentenceStartTime = gameStartTime;
-            });
-            
-            await roomManager.updateRoom(roomCode, updatedRoom);
+        // Start game after delay
+        const timerId = setTimeout(async () => {
+          try {
+            const updatedRoom = await roomManager.getRoom(roomCode);
+            // Verify room is still in countdown (hasn't been reset/deleted)
+            if (updatedRoom && updatedRoom.status === 'COUNTDOWN') {
+              updatedRoom.status = 'PLAYING';
+              updatedRoom.gameStartedAt = Date.now();
+              
+              const gameStartTime = Date.now();
+              Object.keys(updatedRoom.players).forEach(pId => {
+                updatedRoom.players[pId].sentenceStartTime = gameStartTime;
+              });
+              
+              await roomManager.updateRoom(roomCode, updatedRoom);
 
-            io.to(roomCode).emit('game_start', {
-              firstSentence: sentences[0],
-              gameStartTime: gameStartTime
-            });
+              io.to(roomCode).emit('game_start', {
+                firstSentence: sentences[0],
+                gameStartTime: gameStartTime
+              });
 
-            console.log(`Game started: ${roomCode}`);
+              console.log(`Game started: ${roomCode}`);
+            }
+          } catch (err) {
+            console.error(`Error starting game for room ${roomCode}:`, err);
+          } finally {
+            roomCountdownTimers.delete(roomCode);
           }
-        }, 3000);
+        }, CONSTANTS.COUNTDOWN_DURATION);
+
+        roomCountdownTimers.set(roomCode, timerId);
 
         callback({ success: true });
 
@@ -295,43 +674,35 @@ function setupSocketHandlers(io) {
 
     socket.on('force_reset_game', async (data, callback) => {
       try {
+        validateInput('roomCode', data);
         const { roomCode } = data;
         const playerId = socket.playerId;
 
         const room = await roomManager.getRoom(roomCode);
-        if (!room) {
-          return callback({ success: false, error: 'Room not found' });
-        }
-
-        if (room.hostId !== playerId) {
-          return callback({ success: false, error: 'Only host can reset game' });
-        }
+        if (!room) return callback({ success: false, error: 'Room not found' });
+        if (room.hostId !== playerId) return callback({ success: false, error: 'Only host can reset game' });
 
         console.log(`FORCE RESET: Host ${playerId} resetting room ${roomCode}`);
+        
+        cleanupRoomTimer(roomCode);
 
-        // Find spectator sockets and get their info
+        // Recover spectators to player list
         const spectatorSocketMap = new Map();
         const roomSockets = await io.in(roomCode).fetchSockets();
         
         for (const sock of roomSockets) {
-          if (room.spectators && room.spectators.includes(sock.playerId)) {
-            spectatorSocketMap.set(sock.playerId, sock);
+          const sockPlayerId = sock.playerId || sock.data?.playerId;
+          if (sockPlayerId && room.spectators?.includes(sockPlayerId)) {
+            spectatorSocketMap.set(sockPlayerId, sock);
           }
         }
 
-        // Move spectators to players
         if (room.spectators && room.spectators.length > 0) {
           for (const spectatorId of room.spectators) {
-            // If spectator was a dead player, they're already in room.players
             if (!room.players[spectatorId]) {
-              // This is a mid-game joiner spectator - need to create player object
               const spectatorSocket = spectatorSocketMap.get(spectatorId);
               if (spectatorSocket) {
-                // Try to find their nickname (stored when they joined)
-                const nickname = spectatorSocket.nickname || 'SPECTATOR';
-                
-                console.log(`  → Adding spectator ${nickname} (${spectatorId}) as player`);
-                
+                const nickname = spectatorSocket.nickname || spectatorSocket.data?.nickname || 'SPECTATOR';
                 room.players[spectatorId] = {
                   id: spectatorId,
                   nickname: nickname,
@@ -350,7 +721,7 @@ function setupSocketHandlers(io) {
                   currentWordIndex: 0,
                   currentCharInWord: 0,
                   sentenceStartTime: null,
-                  remainingTime: 20,
+                  remainingTime: CONSTANTS.GAME_DURATION_TIMEOUT,
                   rouletteHistory: [],
                   sentenceHistory: [],
                   averageWPM: 0,
@@ -358,19 +729,15 @@ function setupSocketHandlers(io) {
                   currentSessionWPM: 0
                 };
               }
-            } else {
-              console.log(`  → Resetting dead player ${room.players[spectatorId].nickname} back to ALIVE`);
             }
           }
         }
 
-        // Reset room to lobby state
         room.status = 'LOBBY';
         room.sentences = [];
         room.gameStartedAt = null;
-        room.spectators = []; // Clear spectators array
+        room.spectators = [];
 
-        // Reset all players (including former spectators)
         Object.keys(room.players).forEach(pId => {
           const p = room.players[pId];
           p.status = 'ALIVE';
@@ -394,11 +761,7 @@ function setupSocketHandlers(io) {
 
         await roomManager.updateRoom(roomCode, room);
 
-        // Notify all players to return to lobby
-        io.to(roomCode).emit('game_force_reset', {
-          room: room
-        });
-
+        io.to(roomCode).emit('game_force_reset', { room: room });
         console.log(`Room ${roomCode} reset to lobby`);
         callback({ success: true });
 
@@ -408,396 +771,96 @@ function setupSocketHandlers(io) {
       }
     });
 
+    // --- GAMEPLAY EVENTS (QUEUED) ---
+
     socket.on('char_typed', async (data) => {
       try {
         const playerId = socket.playerId;
+        if (!playerId) return;
         if (!roomManager.checkEventRateLimit(playerId)) return;
+        
         roomManager.validateEventData('char_typed', data);
-        const { roomCode, char, charIndex } = data;
+        validateInput('charIndex', data);
+        validateInput('roomCode', data); 
 
-        const room = await roomManager.getRoom(roomCode);
-        if (!room || room.status !== 'PLAYING') return;
-
-        const player = room.players[playerId];
-        if (!player || player.status !== 'ALIVE') return;
-
-        const currentSentence = room.sentences[player.currentSentenceIndex];
-        const expectedChar = currentSentence[charIndex];
-
-        player.totalTypedChars++;
-
-        if (char === expectedChar) {
-          player.currentCharIndex++;
-          player.totalCorrectChars++;
-
-          const words = currentSentence.split(' ');
-          let charCount = 0;
-          let wordIndex = 0;
-          let charInWord = 0;
-          
-          for (let i = 0; i < words.length; i++) {
-            if (charCount + words[i].length >= player.currentCharIndex) {
-              wordIndex = i;
-              charInWord = player.currentCharIndex - charCount;
-              break;
-            }
-            charCount += words[i].length + 1;
-          }
-          
-          player.currentWordIndex = wordIndex;
-          player.currentCharInWord = charInWord;
-
-          const timeElapsed = (Date.now() - player.sentenceStartTime) / 1000 / 60;
-          const charsTyped = player.currentCharIndex;
-          player.currentSessionWPM = Math.round((charsTyped / 5) / timeElapsed);
-          player.averageWPM = Math.round((player.totalCorrectChars / 5) / ((Date.now() - room.gameStartedAt) / 1000 / 60));
-
-          if (player.currentCharIndex === currentSentence.length) {
-            const timeUsed = (Date.now() - player.sentenceStartTime) / 1000;
-            player.completedSentences++;
-            player.currentSentenceIndex++;
-            player.currentCharIndex = 0;
-
-            player.sentenceHistory.push({
-              sentenceIndex: player.currentSentenceIndex - 1,
-              completed: true,
-              timeUsed: timeUsed,
-              accuracy: 100,
-              wpm: player.currentSessionWPM
-            });
-
-            if (player.completedSentences === room.settings.sentenceCount) {
-              room.status = 'FINISHED';
-              await roomManager.updateRoom(roomCode, room);
-
-              const sortedPlayers = Object.values(room.players).sort((a, b) => {
-                if (b.completedSentences !== a.completedSentences) {
-                  return b.completedSentences - a.completedSentences;
-                }
-                return b.totalCorrectChars - a.totalCorrectChars;
-              });
-
-              io.to(roomCode).emit('game_ended', {
-                reason: 'COMPLETION',
-                winnerId: playerId,
-                winnerNickname: player.nickname,
-                finalStats: room.players
-              });
-            } else {
-              const newSentenceStartTime = Date.now();
-              player.sentenceStartTime = newSentenceStartTime;
-              player.currentWordIndex = 0;
-              player.currentCharInWord = 0;
-
-              await roomManager.updateRoom(roomCode, room);
-
-              io.to(roomCode).emit('sentence_completed', {
-                playerId: playerId,
-                completedSentenceIndex: player.currentSentenceIndex - 1,
-                newSentenceIndex: player.currentSentenceIndex,
-                time: timeUsed,
-                wpm: player.currentSessionWPM,
-                sentenceStartTime: newSentenceStartTime,
-                currentWordIndex: 0,
-                currentCharInWord: 0,
-                currentCharIndex: 0
-              });
-
-              io.to(roomCode).emit('player_progress', {
-                playerId: playerId,
-                charIndex: 0,
-                sentenceIndex: player.currentSentenceIndex,
-                currentWordIndex: 0,
-                currentCharInWord: 0,
-                completedSentences: player.completedSentences,
-                totalCorrectChars: player.totalCorrectChars,
-                totalTypedChars: player.totalTypedChars,
-                totalMistypes: player.totalMistypes,
-                wpm: player.currentSessionWPM,
-                status: player.status,
-                sentenceStartTime: newSentenceStartTime
-              });
-            }
-          } else {
-            // Normal character typed (not sentence completion)
-            await roomManager.updateRoom(roomCode, room);
-
-            io.to(roomCode).emit('player_progress', {
-              playerId: playerId,
-              charIndex: player.currentCharIndex,
-              sentenceIndex: player.currentSentenceIndex,
-              currentWordIndex: wordIndex,
-              currentCharInWord: charInWord,
-              completedSentences: player.completedSentences,
-              totalCorrectChars: player.totalCorrectChars,
-              totalTypedChars: player.totalTypedChars,
-              totalMistypes: player.totalMistypes,
-              wpm: player.currentSessionWPM,
-              status: player.status,
-              sentenceStartTime: player.sentenceStartTime
-            });
-          }
-        } else {
-          player.totalMistypes++;
-          await roomManager.updateRoom(roomCode, room);
-
-          io.to(roomCode).emit('player_progress', {
-            playerId: playerId,
-            charIndex: player.currentCharIndex,
-            sentenceIndex: player.currentSentenceIndex,
-            currentWordIndex: player.currentWordIndex || 0,
-            currentCharInWord: player.currentCharInWord || 0,
-            completedSentences: player.completedSentences,
-            totalCorrectChars: player.totalCorrectChars,
-            totalTypedChars: player.totalTypedChars,
-            totalMistypes: player.totalMistypes,
-            wpm: player.currentSessionWPM,
-            status: player.status,
-            sentenceStartTime: player.sentenceStartTime
-          });
-        }
+        // Add to queue to ensure serial processing against mistypes
+        await queuePlayerEvent(playerId, () => processCharTypedEvent(io, socket, data));
 
       } catch (error) {
         console.error('Char typed error:', error.message);
+        socket.emit('event_error', { event: 'char_typed', error: error.message });
       }
     });
 
     socket.on('mistype', async (data) => {
       try {
         const playerId = socket.playerId;
+        if (!playerId) return;
         if (!roomManager.checkEventRateLimit(playerId)) return;
-        roomManager.validateEventData('mistype', data);
         
-        const { roomCode, sentenceIndex } = data;
-
-        const room = await roomManager.getRoom(roomCode);
-        if (!room || room.status !== 'PLAYING') return;
-
-        const player = room.players[playerId];
-        if (!player || player.status !== 'ALIVE') return;
-
-        player.mistakeStrikes = (player.mistakeStrikes || 0) + 1;
-        player.totalMistypes++;
-
-        console.log(`Strike: ${player.nickname} has ${player.mistakeStrikes}/3 strikes`);
-
-        player.currentCharIndex = 0;
-        const resetStartTime = Date.now();
-        player.sentenceStartTime = resetStartTime;
-
-        io.to(roomCode).emit('player_strike', {
-          playerId: playerId,
-          strikes: player.mistakeStrikes,
-          maxStrikes: 3,
-          sentenceStartTime: resetStartTime
-        });
-
-        if (player.mistakeStrikes >= 3) {
-          player.mistakeStrikes = 0;
-          const odds = player.rouletteOdds;
-          const roll = crypto.randomInt(1, odds + 1);
-          const survived = roll > 1;
-
-          console.log(`Roulette result: ${player.nickname} rolled ${roll}/${odds} - ${survived ? 'SURVIVED' : 'DIED'}`);
-
-          player.rouletteHistory.push({
-            sentenceIndex: sentenceIndex,
-            odds: `1/${odds}`,
-            survived: survived,
-            roll: roll,
-            timestamp: Date.now()
-          });
-
-          if (survived) {
-            player.rouletteOdds = Math.max(2, odds - 1);
-            player.currentCharIndex = 0;
-            const rouletteResetTime = Date.now();
-            player.sentenceStartTime = rouletteResetTime;
-
-            io.to(roomCode).emit('roulette_result', {
-              playerId: playerId,
-              survived: true,
-              newOdds: player.rouletteOdds,
-              roll: roll,
-              previousOdds: odds,
-              sentenceStartTime: rouletteResetTime
-            });
-          } else {
-            player.status = 'DEAD';
-            
-            player.sentenceHistory.push({
-              sentenceIndex: sentenceIndex,
-              completed: false,
-              deathReason: 'MISTYPE',
-              timeUsed: (Date.now() - player.sentenceStartTime) / 1000
-            });
-
-            io.to(roomCode).emit('roulette_result', {
-              playerId: playerId,
-              survived: false,
-              newOdds: odds,
-              roll: roll,
-              previousOdds: odds
-            });
-
-            io.to(roomCode).emit('player_died', {
-              playerId: playerId,
-              deathReason: 'MISTYPE'
-            });
-
-            const alivePlayers = Object.values(room.players).filter(p => p.status === 'ALIVE');
-            if (alivePlayers.length === 0) {
-              const sortedPlayers = Object.values(room.players).sort((a, b) => {
-                if (b.completedSentences !== a.completedSentences) {
-                  return b.completedSentences - a.completedSentences;
-                }
-                return b.totalCorrectChars - a.totalCorrectChars;
-              });
-
-              room.status = 'FINISHED';
-              await roomManager.updateRoom(roomCode, room);
-
-              io.to(roomCode).emit('game_ended', {
-                reason: 'ALL_DEAD',
-                winnerId: sortedPlayers[0].id,
-                winnerNickname: sortedPlayers[0].nickname,
-                finalStats: room.players
-              });
-              
-              return;
-            }
-          }
-        }
-
-        await roomManager.updateRoom(roomCode, room);
+        roomManager.validateEventData('mistype', data);
+        validateInput('roomCode', data);
+        validateInput('sentenceIndex', data);
+        
+        // Add to queue
+        await queuePlayerEvent(playerId, () => processMistypeEvent(io, socket, data));
 
       } catch (error) {
         console.error('Mistype error:', error.message);
+        socket.emit('event_error', { event: 'mistype', error: error.message });
       }
     });
 
     socket.on('sentence_timeout', async (data) => {
       try {
         const playerId = socket.playerId;
+        if (!playerId) return;
         if (!roomManager.checkEventRateLimit(playerId)) return;
+        
         roomManager.validateEventData('sentence_timeout', data);
+        validateInput('roomCode', data);
+        validateInput('sentenceIndex', data);
         
-        const { roomCode, sentenceIndex } = data;
-
-        const room = await roomManager.getRoom(roomCode);
-        if (!room || room.status !== 'PLAYING') return;
-
-        const player = room.players[playerId];
-        if (!player || player.status !== 'ALIVE') return;
-
-        const odds = player.rouletteOdds;
-        const roll = crypto.randomInt(1, odds + 1);
-        const survived = roll > 1;
-        
-        console.log(`Timeout roulette: ${player.nickname} rolled ${roll}/${odds} - ${survived ? 'SURVIVED' : 'DIED'}`);
-
-        player.rouletteHistory.push({
-          sentenceIndex: sentenceIndex,
-          odds: `1/${odds}`,
-          survived: survived,
-          roll: roll,
-          timestamp: Date.now()
-        });
-
-        if (survived) {
-          player.rouletteOdds = Math.max(2, odds - 1);
-          player.currentCharIndex = 0;
-          const timeoutResetTime = Date.now();
-          player.sentenceStartTime = timeoutResetTime;
-
-          io.to(roomCode).emit('roulette_result', {
-            playerId: playerId,
-            survived: true,
-            newOdds: player.rouletteOdds,
-            roll: roll,
-            previousOdds: odds,
-            sentenceStartTime: timeoutResetTime
-          });
-        } else {
-          player.status = 'DEAD';
-          
-          player.sentenceHistory.push({
-            sentenceIndex: sentenceIndex,
-            completed: false,
-            deathReason: 'TIMEOUT',
-            timeUsed: 20
-          });
-
-          io.to(roomCode).emit('roulette_result', {
-            playerId: playerId,
-            survived: false,
-            newOdds: odds,
-            roll: roll,
-            previousOdds: odds
-          });
-
-          io.to(roomCode).emit('player_died', {
-            playerId: playerId,
-            deathReason: 'TIMEOUT'
-          });
-
-          const alivePlayers = Object.values(room.players).filter(p => p.status === 'ALIVE');
-          if (alivePlayers.length === 0) {
-            const sortedPlayers = Object.values(room.players).sort((a, b) => {
-              if (b.completedSentences !== a.completedSentences) {
-                return b.completedSentences - a.completedSentences;
-              }
-              return b.totalCorrectChars - a.totalCorrectChars;
-            });
-
-            room.status = 'FINISHED';
-            await roomManager.updateRoom(roomCode, room);
-
-            io.to(roomCode).emit('game_ended', {
-              winnerId: sortedPlayers[0].id,
-              winnerNickname: sortedPlayers[0].nickname,
-              finalStats: room.players,
-              reason: 'ALL_DEAD'
-            });
-            
-            return;
-          }
-        }
-
-        await roomManager.updateRoom(roomCode, room);
+        // Add to queue
+        await queuePlayerEvent(playerId, () => processTimeoutEvent(io, socket, data));
 
       } catch (error) {
         console.error('Timeout error:', error.message);
+        socket.emit('event_error', { event: 'sentence_timeout', error: error.message });
       }
     });
 
-    socket.on('request_replay', async (data) => {
+    // --- REPLAY & RECONNECT EVENTS ---
+
+    socket.on('request_replay', async (data, callback) => {
       try {
+        validateInput('roomCode', data);
         const { roomCode } = data;
         const playerId = socket.playerId;
 
-        const room = await roomManager.getRoom(roomCode);
-        if (!room) {
-          console.error('Replay failed: Room not found');
-          return;
-        }
+        if (!playerId) return callback?.({ success: false, error: 'Not authenticated' });
 
-        if (room.hostId !== playerId) {
-          console.error('Replay failed: Not host');
-          return; 
-        }
+        const room = await roomManager.getRoom(roomCode);
+        if (!room) return callback?.({ success: false, error: 'Room not found' });
+        if (room.hostId !== playerId) return callback?.({ success: false, error: 'Only host can request replay' });
 
         console.log(`REPLAY: Resetting room ${roomCode}`);
+        
+        cleanupRoomTimer(roomCode);
+
+        // Clear queues/timers for all players
+        Object.keys(room.players).forEach(pId => {
+          cleanupDisconnectTimer(pId);
+          playerEventQueues.delete(pId);
+        });
 
         room.status = 'LOBBY';
         room.sentences = [];
         room.gameStartedAt = null;
 
+        // Reset player states
         Object.keys(room.players).forEach(pId => {
           const p = room.players[pId];
-          
-          console.log(`  → Resetting ${p.nickname}: rouletteOdds ${p.rouletteOdds} → 6`);
-          
           p.status = 'ALIVE';
           p.currentSentenceIndex = 0;
           p.rouletteOdds = 6;
@@ -807,6 +870,8 @@ function setupSocketHandlers(io) {
           p.totalTypedChars = 0;
           p.totalMistypes = 0;
           p.currentCharIndex = 0;
+          p.currentWordIndex = 0;
+          p.currentCharInWord = 0;
           p.sentenceStartTime = null;
           p.rouletteHistory = [];
           p.sentenceHistory = [];
@@ -817,23 +882,22 @@ function setupSocketHandlers(io) {
 
         await roomManager.updateRoom(roomCode, room);
         
-        const verifyRoom = await roomManager.getRoom(roomCode);
-        const verifyPlayer = Object.values(verifyRoom.players)[0];
-        console.log(`  ✓ Verified: ${verifyPlayer.nickname} rouletteOdds = ${verifyPlayer.rouletteOdds}`);
-
-        io.to(roomCode).emit('replay_started', {
-          room: verifyRoom
-        });
-
+        io.to(roomCode).emit('replay_started', { room });
         console.log(`Replay complete for room: ${roomCode}`);
+
+        callback?.({ success: true });
 
       } catch (error) {
         console.error('Replay error:', error.message);
+        callback?.({ success: false, error: error.message });
       }
     });
 
     socket.on('reconnect_attempt', async (data, callback) => {
       try {
+        validateInput('roomCode', data);
+        validateInput('playerId', data);
+        
         const { roomCode, playerId } = data;
 
         const room = await roomManager.getRoom(roomCode);
@@ -848,7 +912,7 @@ function setupSocketHandlers(io) {
         }
 
         const timeSinceDisconnect = Date.now() - player.disconnectedAt;
-        if (timeSinceDisconnect > 30000) {
+        if (timeSinceDisconnect > CONSTANTS.DISCONNECT_GRACE_PERIOD) {
           await roomManager.removePlayer(roomCode, playerId);
           return callback({ success: false, error: 'Grace period expired' });
         }
@@ -865,11 +929,41 @@ function setupSocketHandlers(io) {
           resumedState: updatedRoom.players[playerId]
         });
 
-        console.log(`Player reconnected: ${playerId}`);
+        console.log(`Player reconnected: ${playerId} to room ${roomCode}`);
 
         const reconnectedPlayer = updatedRoom.players[playerId];
         const isSpectator = updatedRoom.spectators?.includes(playerId) || 
                             reconnectedPlayer?.status === 'DEAD';
+
+        if (updatedRoom.status === 'PLAYING' || updatedRoom.status === 'COUNTDOWN') {
+          socket.emit('sync_game_state', {
+            status: updatedRoom.status,
+            gameStartedAt: updatedRoom.gameStartedAt,
+            settings: updatedRoom.settings,
+            sentences: updatedRoom.sentences || []
+          });
+
+          // Send current progress of all players to the reconnected user
+          Object.keys(updatedRoom.players).forEach(pId => {
+            const p = updatedRoom.players[pId];
+            socket.emit('player_progress', {
+              playerId: pId,
+              charIndex: p.currentCharIndex || 0,
+              sentenceIndex: p.currentSentenceIndex || 0,
+              currentWordIndex: p.currentWordIndex || 0,
+              currentCharInWord: p.currentCharInWord || 0,
+              completedSentences: p.completedSentences || 0,
+              totalCorrectChars: p.totalCorrectChars || 0,
+              totalTypedChars: p.totalTypedChars || 0,
+              totalMistypes: p.totalMistypes || 0,
+              wpm: p.averageWPM || 0,
+              status: p.status || 'ALIVE',
+              sentenceStartTime: p.sentenceStartTime,
+              mistakeStrikes: p.mistakeStrikes || 0,
+              rouletteOdds: p.rouletteOdds || 6
+            });
+          });
+        }
 
         callback({ 
           success: true, 
@@ -886,42 +980,61 @@ function setupSocketHandlers(io) {
 
     socket.on('disconnect', async () => {
       if (socket.roomCode && socket.playerId) {
-        const room = await roomManager.getRoom(socket.roomCode);
-        
-        if (!room || !room.players[socket.playerId]) {
-          console.log(`Player ${socket.playerId} disconnected but not in room anymore`);
-          return;
-        }
-
-        if (room.players[socket.playerId].status === 'ALIVE') {
-          room.players[socket.playerId].status = 'DISCONNECTED';
-          room.players[socket.playerId].disconnectedAt = Date.now();
+        try {
+          const room = await roomManager.getRoom(socket.roomCode);
           
-          await roomManager.updateRoom(socket.roomCode, room);
+          if (!room || !room.players[socket.playerId]) {
+            console.log(`Player ${socket.playerId} disconnected but not in room anymore`);
+            return;
+          }
 
-          socket.to(socket.roomCode).emit('player_disconnected', {
-            playerId: socket.playerId,
-            gracePeriodEnd: Date.now() + 30000,
-            updatedPlayers: Object.values(room.players)
-          });
+          if (room.players[socket.playerId].status === 'ALIVE') {
+            // Mark as disconnected to allow grace period
+            room.players[socket.playerId].status = 'DISCONNECTED';
+            room.players[socket.playerId].disconnectedAt = Date.now();
+            
+            await roomManager.updateRoom(socket.roomCode, room);
 
-          const timeoutId = setTimeout(async () => {
-            const freshRoom = await roomManager.getRoom(socket.roomCode);
-            if (freshRoom && freshRoom.players[socket.playerId]?.status === 'DISCONNECTED') {
-              console.log(`Grace period expired for ${socket.playerId}`);
-              const result = await roomManager.removePlayer(socket.roomCode, socket.playerId);
-              if (result && !result.deleted && result.room) {
-                io.to(socket.roomCode).emit('player_left', { 
-                  playerId: socket.playerId,
-                  updatedPlayers: Object.values(result.room.players),
-                  newHostId: result.room.hostId
-                });
+            socket.to(socket.roomCode).emit('player_disconnected', {
+              playerId: socket.playerId,
+              gracePeriodEnd: Date.now() + CONSTANTS.DISCONNECT_GRACE_PERIOD,
+              updatedPlayers: Object.values(room.players)
+            });
+
+            const timeoutId = setTimeout(async () => {
+              try {
+                const freshRoom = await roomManager.getRoom(socket.roomCode);
+                if (freshRoom && freshRoom.players[socket.playerId]?.status === 'DISCONNECTED') {
+                  console.log(`Grace period expired for ${socket.playerId}`);
+                  
+                  // Clean up queues
+                  playerEventQueues.delete(socket.playerId);
+                  
+                  // Remove player permanently
+                  const result = await roomManager.removePlayer(socket.roomCode, socket.playerId);
+                  if (result && !result.deleted && result.room) {
+                    io.to(socket.roomCode).emit('player_left', { 
+                      playerId: socket.playerId,
+                      updatedPlayers: Object.values(result.room.players),
+                      newHostId: result.room.hostId
+                    });
+                  }
+                }
+              } catch (err) {
+                console.error(`Error handling disconnect timeout for ${socket.playerId}:`, err);
+              } finally {
+                disconnectTimers.delete(socket.playerId);
               }
-            }
-            disconnectTimers.delete(socket.playerId);
-          }, 30000);
-          
-          disconnectTimers.set(socket.playerId, timeoutId);
+            }, CONSTANTS.DISCONNECT_GRACE_PERIOD);
+            
+            disconnectTimers.set(socket.playerId, timeoutId);
+          } else {
+            // If spectator or already dead, clean up immediately
+            cleanupDisconnectTimer(socket.playerId);
+            playerEventQueues.delete(socket.playerId);
+          }
+        } catch (err) {
+          console.error(`Error in disconnect handler for ${socket.playerId}:`, err);
         }
       }
     });
@@ -930,6 +1043,6 @@ function setupSocketHandlers(io) {
       socket.emit('heartbeat_ack');
     });
   });
-}
 
-module.exports = setupSocketHandlers;
+  return io;
+}

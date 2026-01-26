@@ -1,5 +1,4 @@
-const db = require('../config/database');
-const redis = require('../config/redis');
+import db from '../config/database.js';
 
 class SentenceService {
   constructor() {
@@ -8,6 +7,7 @@ class SentenceService {
   }
 
   async selectSentences(count) {
+    // TABLESAMPLE BERNOULLI is efficient for large tables but imprecise for small ones
     const query = `
       SELECT text
       FROM sentences TABLESAMPLE BERNOULLI(10)
@@ -23,6 +23,8 @@ class SentenceService {
     try {
       const result = await db.query(query, [count]);
       
+      // Fallback: If Bernoulli sampling yields insufficient rows (common in small tables),
+      // force a standard full-table scan.
       if (result.rows.length < count) {
         const fallbackQuery = `
           SELECT text
@@ -51,7 +53,10 @@ class SentenceService {
       const sentences = result.rows.map(row => row.text);
 
       console.log(`Selected ${sentences.length} random sentences`);
-      console.log(`   Sample: "${sentences[0]}" ... "${sentences[sentences.length - 1]}"`);
+      // Debug logging for sample verification
+      if (sentences.length > 0) {
+        console.log(`   Sample: "${sentences[0]}" ... "${sentences[sentences.length - 1]}"`);
+      }
       
       return sentences;
 
@@ -64,7 +69,9 @@ class SentenceService {
   validateSentence(text) {
     const errors = [];
     
+    // Normalize spaces
     const words = text.trim().split(/\s+/);
+    
     if (words.length < 5 || words.length > 10) {
       errors.push(`Word count ${words.length} not in range [5,10]`);
     }
@@ -73,10 +80,12 @@ class SentenceService {
       errors.push(`Sentence too long: ${text.length} chars`);
     }
     
+    // Strict alphanumeric check + basic punctuation
     if (!/^[a-zA-Z0-9\s.,!?'-]+$/.test(text)) {
       errors.push('Non-English characters detected');
     }
     
+    // Basic emoji range check
     const emojiRegex = /[\u{1F600}-\u{1F64F}]/u;
     if (emojiRegex.test(text)) {
       errors.push('Emoji detected');
@@ -113,4 +122,4 @@ class SentenceService {
   }
 }
 
-module.exports = new SentenceService();
+export default new SentenceService();

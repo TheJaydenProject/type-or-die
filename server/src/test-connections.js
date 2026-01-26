@@ -2,8 +2,13 @@
 // Usage: node server/src/test-connections.js
 // Validates Redis, PostgreSQL, and server startup before deployment
 
-const Redis = require('ioredis');
-const { Pool } = require('pg');
+import Redis from 'ioredis';
+import pg from 'pg';
+import express from 'express';
+import http from 'http';
+
+// Destructure Pool from the default export to ensure CJS/ESM interop
+const { Pool } = pg;
 
 console.log('Testing connections...\n');
 
@@ -13,6 +18,7 @@ async function testRedis() {
     host: 'localhost',
     port: 6379,
     retryStrategy: (times) => {
+      // Stop retrying after 3 attempts to prevent hanging tests
       if (times > 3) return null;
       return Math.min(times * 50, 2000);
     }
@@ -23,9 +29,11 @@ async function testRedis() {
       console.log('Redis connected');
       
       try {
+        // Validate write/read permissions
         await redis.set('test:key', 'Connection test');
         const value = await redis.get('test:key');
         console.log(`  Read test: "${value}"`);
+        
         await redis.del('test:key');
         redis.disconnect();
         resolve(true);
@@ -37,10 +45,12 @@ async function testRedis() {
     });
 
     redis.on('error', (err) => {
+      // Suppress full stack trace for connection errors, just show message
       console.log('Redis error:', err.message);
       resolve(false);
     });
 
+    // Hard timeout if the event listeners never fire
     setTimeout(() => {
       console.log('Redis connection timeout');
       redis.disconnect();
@@ -62,6 +72,7 @@ async function testPostgres() {
   });
 
   try {
+    // Simple query to validate auth and DB existence
     const result = await pool.query('SELECT NOW()');
     console.log('PostgreSQL connected');
     console.log(`  Server time: ${result.rows[0].now}`);
@@ -78,9 +89,6 @@ async function testServer() {
   console.log('\nTesting Server...');
   
   try {
-    const express = require('express');
-    const http = require('http');
-    
     const app = express();
     const server = http.createServer(app);
     
@@ -95,6 +103,7 @@ async function testServer() {
       });
       
       server.on('error', (err) => {
+        // EADDRINUSE is acceptable if the dev server is already running
         if (err.code === 'EADDRINUSE') {
           console.log('Port 3000 is in use (OK if server is running)');
           resolve();

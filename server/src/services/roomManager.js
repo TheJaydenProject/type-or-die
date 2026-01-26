@@ -1,5 +1,5 @@
-const crypto = require('crypto');
-const redis = require('../config/redis');
+import crypto from 'crypto';
+import redis from '../config/redis.js';
 
 class RoomManager {
   constructor() {
@@ -7,9 +7,12 @@ class RoomManager {
     this.IP_PREFIX = 'ip:';
     this.LOCK_PREFIX = 'lock:room:';
     this.GLOBAL_ROOM_COUNT = 'global:room_count';
+    
     this.MAX_ROOMS_PER_IP = 4;
     this.MAX_GLOBAL_ROOMS = 200;
-    this.ROOM_TTL = 86400;
+    this.ROOM_TTL = 86400; // 24 hours
+    
+    // Lock configuration for race condition handling
     this.LOCK_TTL = 5;
     this.LOCK_RETRY_ATTEMPTS = 3;
     this.LOCK_RETRY_DELAY = 50;
@@ -18,6 +21,7 @@ class RoomManager {
     this.EVENT_RATE_LIMIT = 100;
     this.playerEventCounts = new Map();
     
+    // Background tasks
     setInterval(() => this.cleanupRateLimitData(), 60000);
     setInterval(() => this.cleanupInactiveRooms(), 300000);
   }
@@ -27,6 +31,7 @@ class RoomManager {
     const lockValue = crypto.randomBytes(16).toString('hex');
 
     for (let attempt = 0; attempt < this.LOCK_RETRY_ATTEMPTS; attempt++) {
+      // NX: Set if Not Exists, EX: Expire in seconds
       const acquired = await redis.set(lockKey, lockValue, 'EX', this.LOCK_TTL, 'NX');
       if (acquired === 'OK') {
         return lockValue;
@@ -34,11 +39,12 @@ class RoomManager {
       await new Promise(resolve => setTimeout(resolve, this.LOCK_RETRY_DELAY));
     }
 
-    throw new Error('Failed to acquire room lock');
+    throw new Error(`Failed to acquire lock for room ${roomCode} after ${this.LOCK_RETRY_ATTEMPTS} attempts`);
   }
 
   async releaseLock(roomCode, lockValue) {
     const lockKey = `${this.LOCK_PREFIX}${roomCode}`;
+    // Lua script ensures we only delete the lock if WE own it
     const script = `
       if redis.call("get", KEYS[1]) == ARGV[1] then
         return redis.call("del", KEYS[1])
@@ -66,6 +72,7 @@ class RoomManager {
   generateRoomCode() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let code = '';
+    // 6 chars is sufficient entropy for <10k concurrent rooms
     for (let i = 0; i < 6; i++) {
       code += chars[Math.floor(Math.random() * chars.length)];
     }
@@ -73,6 +80,7 @@ class RoomManager {
   }
 
   hashIP(ip) {
+    if (!ip) return 'unknown';
     return crypto.createHash('sha256').update(ip).digest('hex');
   }
 
@@ -113,14 +121,22 @@ class RoomManager {
       const pattern = `${this.ROOM_PREFIX}*`;
       const keys = await redis.keys(pattern);
       const now = Date.now();
-      const INACTIVE_THRESHOLD = 3600000;
+      const INACTIVE_THRESHOLD = 3600000; // 1 hour
       let cleaned = 0;
 
       for (const key of keys) {
         const roomData = await redis.get(key);
         if (!roomData) continue;
 
-        const room = JSON.parse(roomData);
+        let room;
+        try {
+          room = JSON.parse(roomData);
+        } catch (e) {
+          // Corrupt data should be purged
+          await redis.del(key);
+          continue;
+        }
+
         const inactiveDuration = now - (room.lastActivity || room.createdAt);
 
         if (inactiveDuration > INACTIVE_THRESHOLD) {
@@ -150,9 +166,15 @@ class RoomManager {
       const roomData = await redis.get(key);
       if (!roomData) continue;
       
-      const room = JSON.parse(roomData);
-      totalPlayers += Object.keys(room.players).length;
-      if (room.status === 'PLAYING') activeGames++;
+      try {
+        const room = JSON.parse(roomData);
+        if (room.players) {
+            totalPlayers += Object.keys(room.players).length;
+        }
+        if (room.status === 'PLAYING') activeGames++;
+      } catch (e) {
+        continue;
+      }
     }
 
     return {
@@ -172,63 +194,44 @@ class RoomManager {
     
     return nickname
       .trim()
-      .replace(/[<>"'&]/g, '')
+      .replace(/[<>"'&]/g, '') // Basic XSS prevention
       .replace(/\s+/g, ' ')
       .substring(0, 20);
   }
 
   validateEventData(eventName, data) {
     if (!data || typeof data !== 'object') {
-      throw new Error('Invalid event data');
+      throw new Error('Invalid event data structure');
     }
 
     const roomCodeRegex = /^[A-Z0-9]{6}$/;
 
     switch (eventName) {
       case 'char_typed':
-        if (typeof data.char !== 'string' || data.char.length !== 1) {
-          throw new Error('Invalid char');
-        }
-        if (typeof data.charIndex !== 'number' || data.charIndex < 0) {
-          throw new Error('Invalid charIndex');
-        }
-        if (!roomCodeRegex.test(data.roomCode)) {
-          throw new Error('Invalid roomCode');
-        }
+        if (typeof data.char !== 'string' || data.char.length !== 1) throw new Error('Invalid char');
+        if (typeof data.charIndex !== 'number' || data.charIndex < 0) throw new Error('Invalid charIndex');
+        if (!roomCodeRegex.test(data.roomCode)) throw new Error('Invalid roomCode');
         break;
 
       case 'create_room':
-        if (!data.nickname || typeof data.nickname !== 'string') {
-          throw new Error('Invalid nickname');
-        }
-        if (!data.settings || typeof data.settings.sentenceCount !== 'number') {
-          throw new Error('Invalid settings');
-        }
-        if (data.settings.sentenceCount < 5 || data.settings.sentenceCount > 100) {
-          throw new Error('sentenceCount out of range');
-        }
+        if (!data.nickname || typeof data.nickname !== 'string') throw new Error('Invalid nickname');
+        if (!data.settings || typeof data.settings.sentenceCount !== 'number') throw new Error('Invalid settings');
+        if (data.settings.sentenceCount < 5 || data.settings.sentenceCount > 100) throw new Error('sentenceCount out of range (5-100)');
         break;
 
       case 'join_room':
-        if (!roomCodeRegex.test(data.roomCode)) {
-          throw new Error('Invalid roomCode format');
-        }
-        if (!data.nickname || typeof data.nickname !== 'string') {
-          throw new Error('Invalid nickname');
-        }
+        if (!roomCodeRegex.test(data.roomCode)) throw new Error('Invalid roomCode format');
+        if (!data.nickname || typeof data.nickname !== 'string') throw new Error('Invalid nickname');
         break;
 
       case 'mistype':
       case 'sentence_timeout':
-        if (!roomCodeRegex.test(data.roomCode)) {
-          throw new Error('Invalid roomCode');
-        }
-        if (typeof data.sentenceIndex !== 'number' || data.sentenceIndex < 0) {
-          throw new Error('Invalid sentenceIndex');
-        }
+        if (!roomCodeRegex.test(data.roomCode)) throw new Error('Invalid roomCode');
+        if (typeof data.sentenceIndex !== 'number' || data.sentenceIndex < 0) throw new Error('Invalid sentenceIndex');
         break;
 
       default:
+        // Allow unknown events to pass validation if strictly necessary, or throw
         break;
     }
 
@@ -245,7 +248,7 @@ class RoomManager {
     if (roomCount >= this.MAX_ROOMS_PER_IP) {
       return {
         allowed: false,
-        reason: `You already have ${this.MAX_ROOMS_PER_IP} active rooms. Close one to create another.`
+        reason: `Limit reached: ${this.MAX_ROOMS_PER_IP} active rooms per IP.`
       };
     }
     
@@ -253,7 +256,7 @@ class RoomManager {
     if (globalCount && parseInt(globalCount) >= this.MAX_GLOBAL_ROOMS) {
       return {
         allowed: false,
-        reason: `Server at capacity (${this.MAX_GLOBAL_ROOMS}/${this.MAX_GLOBAL_ROOMS} rooms). Try again in a few minutes.`
+        reason: `Server full (${this.MAX_GLOBAL_ROOMS} rooms). Retry later.`
       };
     }
     
@@ -388,6 +391,7 @@ class RoomManager {
       const hashedIP = this.hashIP(ipAddress);
       const sanitizedNickname = this.sanitizeNickname(nickname);
 
+      // Spectator logic
       if (room.status === 'PLAYING' || room.status === 'COUNTDOWN') {
         room.spectators.push(playerId);
         await this.updateRoom(roomCode, room);
@@ -450,14 +454,13 @@ class RoomManager {
       const remainingPlayers = Object.keys(room.players).length;
       const remainingSpectators = room.spectators.length;
 
-      console.log(`  ↳ Players left: ${remainingPlayers}, Spectators: ${remainingSpectators}`);
-
       if (remainingPlayers === 0 && remainingSpectators === 0) {
         console.log(`  ↳ Room is empty, deleting...`);
         await this.deleteRoom(roomCode);
         return { deleted: true };
       }
 
+      // Host migration
       if (room.hostId === playerId) {
         const playerIds = Object.keys(room.players);
         if (playerIds.length > 0) {
@@ -494,10 +497,14 @@ class RoomManager {
     const room = await this.getRoom(roomCode);
     if (!room) return;
 
-    Object.keys(room.players).forEach(playerId => {
-      this.playerEventCounts.delete(playerId);
-    });
+    // Cleanup memory maps
+    if (room.players) {
+        Object.keys(room.players).forEach(playerId => {
+            this.playerEventCounts.delete(playerId);
+        });
+    }
 
+    // Cleanup IP tracking
     const ipRoomsKey = `${this.IP_PREFIX}${room.creatorIP}:rooms`;
     const rooms = await redis.get(ipRoomsKey);
     if (rooms) {
@@ -520,4 +527,4 @@ class RoomManager {
   }
 }
 
-module.exports = new RoomManager();
+export default new RoomManager();
