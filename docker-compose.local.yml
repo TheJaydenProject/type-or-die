@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    command: redis-server --requirepass localdevpassword
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: typeordie_dev
+      POSTGRES_USER: devuser
+      POSTGRES_PASSWORD: devpass123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-sentences-db.sql:/docker-entrypoint-initdb.d/init-sentences-db.sql
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  backend:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      DATABASE_URL: postgresql://devuser:devpass123@postgres:5432/typeordie_dev
+      REDIS_URL: redis://:localdevpassword@redis:6379
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: typeordie_dev
+      DB_USER: devuser
+      DB_PASSWORD: devpass123
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: localdevpassword
+      JWT_SECRET: local-dev-jwt-secret-change-me
+      PORT: 3001
+      NODE_ENV: development
+      CLIENT_URL: http://localhost:8080
+      SESSION_SECRET: local-dev-session-secret
+      MAX_ROOMS_PER_IP: 10
+      MAX_GLOBAL_ROOMS: 100
+      MAX_ROOM_CREATIONS_PER_HOUR: 20
+      DEFAULT_TIME_PER_SENTENCE: 30
+      MAX_WPM_THRESHOLD: 200
+      DISCONNECT_GRACE_PERIOD_MS: 5000
+      ROOM_TTL_SECONDS: 3600
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  frontend:
+    build: ./client
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - app-network
+
+volumes:
+  redis-data:
+  postgres-data:
+
+networks:
+  app-network:
+    driver: bridge
