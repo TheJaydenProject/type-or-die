@@ -165,6 +165,7 @@ async function processCharTypedEvent(io, socket, data) {
       // WIN CONDITION
       room.status = 'FINISHED';
       cleanupRoomTimer(roomCode);
+      // Room already saved above, update status change only
       await roomManager.updateRoom(roomCode, room);
 
       io.to(roomCode).emit('game_ended', {

@@ -545,8 +545,12 @@ class RoomManager {
         player.currentCharIndex++;
         player.totalTypedChars++;
         player.totalCorrectChars++;
+        
+        if (!player.sentenceCharCount) {
+          player.sentenceCharCount = 0;
+        }
+        player.sentenceCharCount++;
 
-        // Calculate Global Average WPM
         if (room.gameStartedAt) {
           const totalMinutes = (Date.now() - room.gameStartedAt) / 1000 / 60;
           if (totalMinutes > 0) {
@@ -554,10 +558,9 @@ class RoomManager {
           }
         }
         
-        // Calculate WPM
         const timeElapsed = (Date.now() - player.sentenceStartTime) / 1000 / 60;
         if (timeElapsed > 0) {
-          player.currentSessionWPM = Math.round((player.totalCorrectChars / 5) / timeElapsed);
+          player.currentSessionWPM = Math.round((player.sentenceCharCount / 5) / timeElapsed);
         }
 
         let resultType = 'CORRECT';
@@ -573,6 +576,7 @@ class RoomManager {
             player.currentWordIndex = 0;
             player.currentCharInWord = 0;
             player.currentCharIndex = 0;
+            player.sentenceCharCount = 0;
             
             const now = Date.now();
             extraData.timeUsed = (now - player.sentenceStartTime) / 1000;
@@ -585,6 +589,7 @@ class RoomManager {
               wpm: player.currentSessionWPM,
               timeUsed: extraData.timeUsed
             });
+            player.sentenceCharCount = 0;
           } else {
             // Just next word (space typed)
             player.currentWordIndex++;

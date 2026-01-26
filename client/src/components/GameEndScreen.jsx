@@ -27,17 +27,15 @@ function GameEndScreen({ gameEndData, room, playerId, sentences, onMainMenu, onR
   const { winnerId, finalStats } = gameEndData;
   const currentPlayer = finalStats[playerId] || {};
   
-  // Use sentences.length as the source of truth for total sentences
+  // FIX 1: Use sentences.length as source of truth (not room.settings.sentenceCount which may be 0)
   const totalSentences = sentences?.length || room.settings?.sentenceCount || 0;
   
   const calculateGrade = (player) => {
-    // Spectators get a dash since they didn't play
+    // FIX 2: Check for SPECTATOR status first (spectators get "-" not "C")
     if (!player || player.status === 'SPECTATOR') return '-';
     
-    // Dead players get F
     if (player.status === 'DEAD') return 'F';
     
-    // No typing data means no grade
     if (!player.totalTypedChars) return '-';
     
     const acc = player.totalCorrectChars / player.totalTypedChars;
