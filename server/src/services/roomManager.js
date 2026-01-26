@@ -315,7 +315,8 @@ class RoomManager {
           sentenceHistory: [],
           averageWPM: 0,
           peakWPM: 0,
-          currentSessionWPM: 0
+          currentSessionWPM: 0,
+          sentenceCharCount: 0
         }
       },
       spectators: [],
@@ -428,7 +429,8 @@ class RoomManager {
         sentenceHistory: [],
         averageWPM: 0,
         peakWPM: 0,
-        currentSessionWPM: 0
+        currentSessionWPM: 0,
+        sentenceCharCount: 0
       };
 
       await this.updateRoom(roomCode, room);
@@ -589,9 +591,7 @@ class RoomManager {
               wpm: player.currentSessionWPM,
               timeUsed: extraData.timeUsed
             });
-            player.sentenceCharCount = 0;
           } else {
-            // Just next word (space typed)
             player.currentWordIndex++;
             player.currentCharInWord = 0;
           }
