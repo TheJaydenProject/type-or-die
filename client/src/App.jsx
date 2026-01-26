@@ -13,7 +13,7 @@ function App() {
   const [roomCode, setRoomCode] = useState('');
   const [currentRoom, setCurrentRoom] = useState(null);
   const [playerId, setPlayerId] = useState(null);
-  const [sentenceCount, setSentenceCount] = useState(50);
+  const [sentenceCount, setSentenceCount] = useState(15);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [countdown, setCountdown] = useState(null);
