@@ -260,8 +260,6 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
               setCurrentWordIndex(0);
               setCurrentCharInWord(0);
               setRemainingTime(20);
-            } else {
-              setShowVictory(true);
             }
           }, 100);
         }
@@ -426,7 +424,6 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
       }
     };
 
-
     const handleSentenceCompleted = (data) => {
       setPlayers(prev => {
         const updated = {
@@ -452,11 +449,27 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
       });
     };
 
+    const handleGameEnded = (data) => {
+      console.log('🏁 Game ended event received:', data);
+      setPlayers(prev => {
+        const updatedPlayers = { ...prev };
+        Object.keys(data.finalStats).forEach(pId => {
+          updatedPlayers[pId] = {
+            ...updatedPlayers[pId],
+            ...data.finalStats[pId]
+          };
+        });
+        return updatedPlayers;
+      });
+      setShowVictory(true);
+    };
+
     socket.on('player_progress', handlePlayerProgress);
     socket.on('player_strike', handlePlayerStrike);
     socket.on('roulette_result', handleRouletteResult);
     socket.on('player_died', handlePlayerDied);
     socket.on('sentence_completed', handleSentenceCompleted);
+    socket.on('game_ended', handleGameEnded);
 
     return () => {
       socket.off('player_progress', handlePlayerProgress);
@@ -464,6 +477,7 @@ function GameScreen({ socket, room, playerId, sentences, onLeave, isSpectator = 
       socket.off('roulette_result', handleRouletteResult);
       socket.off('player_died', handlePlayerDied);
       socket.off('sentence_completed', handleSentenceCompleted);
+      socket.off('game_ended', handleGameEnded);
     };
   }, [socket, playerId, showRoulette, status, isSpectator, spectatingPlayerId, players]);
 

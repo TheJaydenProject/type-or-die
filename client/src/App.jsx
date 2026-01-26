@@ -23,6 +23,17 @@ function App() {
 
   useEffect(() => {
     const handleGameEnded = (data) => {
+      console.log('🏁 App.jsx received game_ended:', data);
+      
+      setCurrentRoom(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          players: data.finalStats,
+          status: 'FINISHED'
+        };
+      });
+      
       setGameEndData(data);
       
       setTimeout(() => {
@@ -167,13 +178,11 @@ function App() {
           setCurrentRoom(response.room);
           setPlayerId(response.playerId);
           
-          // Determine role on reconnect
           const player = response.room.players[response.playerId];
           const isSpectator = response.room.spectators?.includes(response.playerId) || 
                               player?.status === 'DEAD';
           setUserRole(isSpectator ? 'SPECTATOR' : 'PLAYER');
           
-          // Route based on game state
           if (response.room.status === 'PLAYING' || response.room.status === 'COUNTDOWN') {
             setView('GAME');
           } else {
