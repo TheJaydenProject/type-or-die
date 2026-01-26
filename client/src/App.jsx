@@ -4,7 +4,7 @@ import GameScreen from './components/GameScreen';
 import GameEndScreen from './components/GameEndScreen';
 import './App.css';
 
-const socket = io('http://localhost:3000');
+const socket = io('http://localhost:3001');
 
 function App() {
   const [connected, setConnected] = useState(false);

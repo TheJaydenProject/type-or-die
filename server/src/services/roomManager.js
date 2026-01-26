@@ -525,6 +525,81 @@ class RoomManager {
     
     console.log(`Room deleted: ${roomCode}`);
   }
+
+  async atomicCharUpdate(roomCode, playerId, char, charIndex) {
+    return this.withLock(roomCode, async () => {
+      const room = await this.getRoom(roomCode);
+      if (!room || room.status !== 'PLAYING') return null;
+
+      const player = room.players[playerId];
+      if (!player || player.status !== 'ALIVE') return null;
+
+      // Validate against local state to prevent desync
+      const currentSentence = room.sentences[player.currentSentenceIndex];
+      const words = currentSentence.split(' ');
+      const currentWord = words[player.currentWordIndex];
+      const targetChar = currentWord[player.currentCharInWord];
+
+      if (char === targetChar) {
+        player.currentCharInWord++;
+        player.currentCharIndex++;
+        player.totalTypedChars++;
+        player.totalCorrectChars++;
+        
+        // Calculate WPM
+        const timeElapsed = (Date.now() - player.sentenceStartTime) / 1000 / 60;
+        if (timeElapsed > 0) {
+          player.currentSessionWPM = Math.round((player.totalCorrectChars / 5) / timeElapsed);
+        }
+
+        let resultType = 'CORRECT';
+        let extraData = {};
+
+        // Word Completion
+        if (player.currentCharInWord >= currentWord.length) {
+          // Check if sentence is complete (last word)
+          if (player.currentWordIndex >= words.length - 1) {
+            resultType = 'SENTENCE_COMPLETE';
+            player.completedSentences++;
+            player.currentSentenceIndex++;
+            player.currentWordIndex = 0;
+            player.currentCharInWord = 0;
+            player.currentCharIndex = 0;
+            
+            const now = Date.now();
+            extraData.timeUsed = (now - player.sentenceStartTime) / 1000;
+            player.sentenceStartTime = now;
+            extraData.newSentenceStartTime = now;
+            
+            player.sentenceHistory.push({
+              sentenceIndex: player.currentSentenceIndex - 1,
+              completed: true,
+              wpm: player.currentSessionWPM,
+              timeUsed: extraData.timeUsed
+            });
+          } else {
+            // Just next word (space typed)
+            player.currentWordIndex++;
+            player.currentCharInWord = 0;
+          }
+        }
+
+        await this.updateRoom(roomCode, room);
+        
+        return {
+          room,
+          player,
+          result: {
+            type: resultType,
+            wordIndex: player.currentWordIndex,
+            charInWord: player.currentCharInWord,
+            ...extraData
+          }
+        };
+      }
+      return null; 
+    });
+  }
 }
 
 export default new RoomManager();
