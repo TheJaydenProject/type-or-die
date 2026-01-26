@@ -545,6 +545,14 @@ class RoomManager {
         player.currentCharIndex++;
         player.totalTypedChars++;
         player.totalCorrectChars++;
+
+        // Calculate Global Average WPM
+        if (room.gameStartedAt) {
+          const totalMinutes = (Date.now() - room.gameStartedAt) / 1000 / 60;
+          if (totalMinutes > 0) {
+            player.averageWPM = Math.round((player.totalCorrectChars / 5) / totalMinutes);
+          }
+        }
         
         // Calculate WPM
         const timeElapsed = (Date.now() - player.sentenceStartTime) / 1000 / 60;

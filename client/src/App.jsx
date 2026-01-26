@@ -532,6 +532,7 @@ function App() {
         gameEndData={gameEndData}
         room={currentRoom}
         playerId={playerId}
+        sentences={sentences}
         onMainMenu={() => {
           localStorage.removeItem('type_or_die_session');
           setView('MENU');

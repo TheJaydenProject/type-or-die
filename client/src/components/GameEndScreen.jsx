@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import './GameEndScreen.css';
 
-function GameEndScreen({ gameEndData, room, playerId, onMainMenu, onReplay }) {
+function GameEndScreen({ gameEndData, room, playerId, sentences, onMainMenu, onReplay }) {
   const [activeTab, setActiveTab] = useState('leaderboard');
 
   if (!gameEndData || !room || !playerId) {
@@ -26,12 +26,12 @@ function GameEndScreen({ gameEndData, room, playerId, onMainMenu, onReplay }) {
 
   const { winnerId, finalStats } = gameEndData;
   const currentPlayer = finalStats[playerId] || {};
-  const sentences = room.sentences || [];
+  const totalSentences = sentences?.length || room.settings?.sentenceCount || 0;
   
   const calculateGrade = (player) => {
     if (!player || player.status === 'DEAD') return 'F';
     
-    if (player.totalTypedChars === 0) return '-';
+    if (!player.totalTypedChars) return '-';
     
     const acc = player.totalCorrectChars / player.totalTypedChars;
     
@@ -82,7 +82,7 @@ function GameEndScreen({ gameEndData, room, playerId, onMainMenu, onReplay }) {
               </div>
               <div className="stat-row">
                 <span className="stat-label">COMPLETION</span>
-                <span className="stat-value">{currentPlayer.completedSentences || 0}/{sentences.length}</span>
+                <span className="stat-value">{currentPlayer.completedSentences || 0}/{totalSentences}</span>
               </div>
               <div className="stat-row">
                 <span className="stat-label">ACCURACY</span>
