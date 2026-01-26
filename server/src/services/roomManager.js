@@ -7,8 +7,8 @@ class RoomManager {
     this.IP_PREFIX = 'ip:';
     this.LOCK_PREFIX = 'lock:room:';
     this.GLOBAL_ROOM_COUNT = 'global:room_count';
-    this.MAX_ROOMS_PER_IP = 2;
-    this.MAX_GLOBAL_ROOMS = 2000;
+    this.MAX_ROOMS_PER_IP = 4;
+    this.MAX_GLOBAL_ROOMS = 200;
     this.ROOM_TTL = 86400;
     this.LOCK_TTL = 5;
     this.LOCK_RETRY_ATTEMPTS = 3;

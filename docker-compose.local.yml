@@ -49,7 +49,7 @@ services:
       NODE_ENV: development
       CLIENT_URL: http://localhost:8080
       SESSION_SECRET: local-dev-session-secret
-      MAX_ROOMS_PER_IP: 10
+      MAX_ROOMS_PER_IP: 15
       MAX_GLOBAL_ROOMS: 100
       MAX_ROOM_CREATIONS_PER_HOUR: 20
       DEFAULT_TIME_PER_SENTENCE: 30
