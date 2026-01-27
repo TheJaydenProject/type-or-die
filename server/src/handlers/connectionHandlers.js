@@ -102,9 +102,14 @@ export function setupConnectionHandlers(io, socket) {
           return;
         }
 
-        if (room.players[socket.playerId].status === 'ALIVE') {
-          room.players[socket.playerId].status = 'DISCONNECTED';
-          room.players[socket.playerId].disconnectedAt = Date.now();
+        const player = room.players[socket.playerId];
+        const shouldUseGracePeriod = player.status === 'ALIVE' && 
+                                      (room.status === 'PLAYING' || room.status === 'COUNTDOWN');
+
+        if (shouldUseGracePeriod) {
+          // Active player in ongoing game - use grace period for reconnection
+          player.status = 'DISCONNECTED';
+          player.disconnectedAt = Date.now();
           
           await roomManager.updateRoom(socket.roomCode, room);
 
@@ -140,8 +145,22 @@ export function setupConnectionHandlers(io, socket) {
           
           disconnectTimers.set(socket.playerId, timeoutId);
         } else {
+          console.log(`Immediately removing ${socket.playerId} (status: ${player.status}, room: ${room.status})`);
+          
           cleanupDisconnectTimer(socket.playerId);
           playerEventQueues.delete(socket.playerId);
+          
+          const result = await roomManager.removePlayer(socket.roomCode, socket.playerId);
+          
+          if (result && !result.deleted && result.room) {
+            socket.to(socket.roomCode).emit('player_left', { 
+              playerId: socket.playerId,
+              updatedPlayers: Object.values(result.room.players),
+              newHostId: result.room.hostId
+            });
+          } else if (result && result.deleted) {
+            console.log(`Room ${socket.roomCode} deleted after last player left`);
+          }
         }
       } catch (err) {
         console.error(`Error in disconnect handler for ${socket.playerId}:`, err);
