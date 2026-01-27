@@ -333,6 +333,8 @@ async function runGameLogicTests(runner) {
       
       socket.on('countdown_start', (data) => {
         sentences = data.sentences;
+        // Store for next test
+        socket._testSentences = sentences;
       });
       
       socket.on('game_start', () => {
@@ -359,14 +361,18 @@ async function runGameLogicTests(runner) {
       socket.on('player_progress', (data) => {
         if (data.playerId === playerId) {
           progressReceived = true;
-          runner.assert(data.charIndex >= 0, 'Character index should be valid');
+          runner.assert(data.charIndex > 0, 'Character index should increment after typing');
         }
       });
       
       setTimeout(() => {
+        // Use the ACTUAL first character from the game's sentences
+        const firstSentence = socket._testSentences[0];
+        const firstChar = firstSentence[0];
+        
         socket.emit('char_typed', {
           roomCode,
-          char: 'a',
+          char: firstChar,
           charIndex: 0,
           timestamp: Date.now()
         });
