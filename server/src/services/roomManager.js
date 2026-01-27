@@ -8,11 +8,10 @@ class RoomManager {
     this.LOCK_PREFIX = 'lock:room:';
     this.GLOBAL_ROOM_COUNT = 'global:room_count';
     
-    this.MAX_ROOMS_PER_IP = 4;
-    this.MAX_GLOBAL_ROOMS = 200;
-    this.ROOM_TTL = 86400; // 24 hours
+    this.MAX_ROOMS_PER_IP = parseInt(process.env.MAX_ROOMS_PER_IP) || 4;
+    this.MAX_GLOBAL_ROOMS = parseInt(process.env.MAX_GLOBAL_ROOMS) || 200;
+    this.ROOM_TTL = parseInt(process.env.ROOM_TTL_SECONDS) || 86400;
     
-    // Lock configuration for race condition handling
     this.LOCK_TTL = 5;
     this.LOCK_RETRY_ATTEMPTS = 3;
     this.LOCK_RETRY_DELAY = 50;
@@ -21,7 +20,6 @@ class RoomManager {
     this.EVENT_RATE_LIMIT = 100;
     this.playerEventCounts = new Map();
     
-    // Background tasks
     setInterval(() => this.cleanupRateLimitData(), 60000);
     setInterval(() => this.cleanupInactiveRooms(), 300000);
   }
@@ -31,7 +29,6 @@ class RoomManager {
     const lockValue = crypto.randomBytes(16).toString('hex');
 
     for (let attempt = 0; attempt < this.LOCK_RETRY_ATTEMPTS; attempt++) {
-      // NX: Set if Not Exists, EX: Expire in seconds
       const acquired = await redis.set(lockKey, lockValue, 'EX', this.LOCK_TTL, 'NX');
       if (acquired === 'OK') {
         return lockValue;
@@ -44,7 +41,6 @@ class RoomManager {
 
   async releaseLock(roomCode, lockValue) {
     const lockKey = `${this.LOCK_PREFIX}${roomCode}`;
-    // Lua script ensures we only delete the lock if WE own it
     const script = `
       if redis.call("get", KEYS[1]) == ARGV[1] then
         return redis.call("del", KEYS[1])
@@ -72,7 +68,6 @@ class RoomManager {
   generateRoomCode() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let code = '';
-    // 6 chars is sufficient entropy for <10k concurrent rooms
     for (let i = 0; i < 6; i++) {
       code += chars[Math.floor(Math.random() * chars.length)];
     }
@@ -121,7 +116,7 @@ class RoomManager {
       const pattern = `${this.ROOM_PREFIX}*`;
       const keys = await redis.keys(pattern);
       const now = Date.now();
-      const INACTIVE_THRESHOLD = 3600000; // 1 hour
+      const INACTIVE_THRESHOLD = 3600000;
       let cleaned = 0;
 
       for (const key of keys) {
@@ -132,7 +127,6 @@ class RoomManager {
         try {
           room = JSON.parse(roomData);
         } catch (e) {
-          // Corrupt data should be purged
           await redis.del(key);
           continue;
         }
@@ -141,7 +135,7 @@ class RoomManager {
 
         if (inactiveDuration > INACTIVE_THRESHOLD) {
           const roomCode = key.replace(this.ROOM_PREFIX, '');
-          await this.deleteRoom(roomCode);
+          await this.forceDeleteRoom(roomCode);
           cleaned++;
         }
       }
@@ -194,7 +188,7 @@ class RoomManager {
     
     return nickname
       .trim()
-      .replace(/[<>"'&]/g, '') // Basic XSS prevention
+      .replace(/[<>"'&]/g, '')
       .replace(/\s+/g, ' ')
       .substring(0, 20);
   }
@@ -231,7 +225,6 @@ class RoomManager {
         break;
 
       default:
-        // Allow unknown events to pass validation if strictly necessary, or throw
         break;
     }
 
@@ -392,7 +385,6 @@ class RoomManager {
       const hashedIP = this.hashIP(ipAddress);
       const sanitizedNickname = this.sanitizeNickname(nickname);
 
-      // Spectator logic
       if (room.status === 'PLAYING' || room.status === 'COUNTDOWN') {
         room.spectators.push(playerId);
         await this.updateRoom(roomCode, room);
@@ -462,7 +454,6 @@ class RoomManager {
         return { deleted: true };
       }
 
-      // Host migration
       if (room.hostId === playerId) {
         const playerIds = Object.keys(room.players);
         if (playerIds.length > 0) {
@@ -495,37 +486,147 @@ class RoomManager {
     });
   }
 
+  /**
+   * IMPROVED: Bulletproof deletion with retries and consistency checks
+   */
   async deleteRoom(roomCode) {
     const room = await this.getRoom(roomCode);
-    if (!room) return;
+    if (!room) {
+      console.warn(`deleteRoom() called but room ${roomCode} doesn't exist`);
+      // Still try to clean up IP tracking in case of inconsistency
+      await this.cleanupOrphanedIPTracking(roomCode);
+      return;
+    }
 
-    // Cleanup memory maps
+    console.log(`Deleting room ${roomCode}...`);
+
     if (room.players) {
         Object.keys(room.players).forEach(playerId => {
             this.playerEventCounts.delete(playerId);
         });
     }
 
-    // Cleanup IP tracking
-    const ipRoomsKey = `${this.IP_PREFIX}${room.creatorIP}:rooms`;
-    const rooms = await redis.get(ipRoomsKey);
-    if (rooms) {
+    // Clean IP tracking with retry logic
+    const maxRetries = 3;
+    let ipCleanupSuccess = false;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const roomList = JSON.parse(rooms).filter(r => r !== roomCode);
-        if (roomList.length > 0) {
-          await redis.set(ipRoomsKey, JSON.stringify(roomList), 'EX', this.ROOM_TTL);
-        } else {
-          await redis.del(ipRoomsKey);
+        const ipRoomsKey = `${this.IP_PREFIX}${room.creatorIP}:rooms`;
+        const rooms = await redis.get(ipRoomsKey);
+        
+        if (rooms) {
+          const roomList = JSON.parse(rooms).filter(r => r !== roomCode);
+          
+          if (roomList.length > 0) {
+            await redis.set(ipRoomsKey, JSON.stringify(roomList), 'EX', this.ROOM_TTL);
+          } else {
+            await redis.del(ipRoomsKey);
+          }
         }
+        
+        ipCleanupSuccess = true;
+        break;
       } catch (err) {
-        console.error(`Failed to update IP rooms for ${room.creatorIP}:`, err.message);
+        console.error(`IP cleanup attempt ${attempt}/${maxRetries} failed:`, err.message);
+        if (attempt < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 100 * attempt));
+        }
       }
     }
 
+    if (!ipCleanupSuccess) {
+      console.error(`CRITICAL: Failed to clean IP tracking for ${roomCode} after ${maxRetries} attempts`);
+    }
+
+    // Decrement global counter with fallback
+    try {
+      await redis.decr(this.GLOBAL_ROOM_COUNT);
+    } catch (err) {
+      console.error(`Failed to decrement global room count:`, err.message);
+      // Fallback: Reset counter to actual count
+      const actualCount = (await redis.keys(`${this.ROOM_PREFIX}*`)).length;
+      await redis.set(this.GLOBAL_ROOM_COUNT, actualCount);
+    }
+    
+    // Delete room data with confirmation
+    try {
+      const deleted = await redis.del(`${this.ROOM_PREFIX}${roomCode}`);
+      if (deleted === 0) {
+        console.warn(`Room ${roomCode} was already deleted`);
+      } else {
+        console.log(`✓ Room deleted: ${roomCode}`);
+      }
+    } catch (err) {
+      console.error(`CRITICAL: Failed to delete room ${roomCode}:`, err.message);
+      throw err;
+    }
+  }
+
+  /**
+   * NEW: Force delete room bypassing locks (for cleanup/admin)
+   */
+  async forceDeleteRoom(roomCode) {
+    console.log(`Force deleting room ${roomCode}...`);
+    
+    const room = await this.getRoom(roomCode);
+    
+    // Clean IP tracking even if room doesn't exist
+    if (room) {
+      const ipRoomsKey = `${this.IP_PREFIX}${room.creatorIP}:rooms`;
+      const rooms = await redis.get(ipRoomsKey);
+      
+      if (rooms) {
+        try {
+          const roomList = JSON.parse(rooms).filter(r => r !== roomCode);
+          if (roomList.length > 0) {
+            await redis.set(ipRoomsKey, JSON.stringify(roomList), 'EX', this.ROOM_TTL);
+          } else {
+            await redis.del(ipRoomsKey);
+          }
+        } catch (err) {
+          console.error(`Failed to update IP rooms:`, err.message);
+        }
+      }
+    }
+    
     await redis.decr(this.GLOBAL_ROOM_COUNT);
     await redis.del(`${this.ROOM_PREFIX}${roomCode}`);
     
-    console.log(`Room deleted: ${roomCode}`);
+    console.log(`✓ Force deleted: ${roomCode}`);
+  }
+
+  /**
+   * NEW: Clean up orphaned IP tracking entries
+   */
+  async cleanupOrphanedIPTracking(roomCode) {
+    try {
+      const ipKeys = await redis.keys(`${this.IP_PREFIX}*:rooms`);
+      
+      for (const ipKey of ipKeys) {
+        const rooms = await redis.get(ipKey);
+        if (!rooms) continue;
+        
+        try {
+          const roomList = JSON.parse(rooms);
+          if (roomList.includes(roomCode)) {
+            const newList = roomList.filter(r => r !== roomCode);
+            
+            if (newList.length > 0) {
+              await redis.set(ipKey, JSON.stringify(newList), 'EX', this.ROOM_TTL);
+            } else {
+              await redis.del(ipKey);
+            }
+            
+            console.log(`Cleaned orphaned reference to ${roomCode} in ${ipKey}`);
+          }
+        } catch (err) {
+          console.error(`Failed to parse rooms for ${ipKey}:`, err.message);
+        }
+      }
+    } catch (err) {
+      console.error(`Failed to cleanup orphaned IP tracking:`, err.message);
+    }
   }
 
   async atomicCharUpdate(roomCode, playerId, char, charIndex) {
@@ -536,7 +637,6 @@ class RoomManager {
       const player = room.players[playerId];
       if (!player || player.status !== 'ALIVE') return null;
 
-      // Validate against local state to prevent desync
       const currentSentence = room.sentences[player.currentSentenceIndex];
       const words = currentSentence.split(' ');
       const currentWord = words[player.currentWordIndex];
@@ -568,9 +668,7 @@ class RoomManager {
         let resultType = 'CORRECT';
         let extraData = {};
 
-        // Word Completion
         if (player.currentCharInWord >= currentWord.length) {
-          // Check if sentence is complete (last word)
           if (player.currentWordIndex >= words.length - 1) {
             resultType = 'SENTENCE_COMPLETE';
             player.completedSentences++;

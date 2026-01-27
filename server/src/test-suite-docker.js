@@ -429,6 +429,45 @@ async function runRoomManagerTests(runner) {
   console.log('ROOM MANAGER TESTS');
   console.log('='.repeat(60));
 
+  await runner.test('Empty room deletes immediately', async () => {
+    const socket = ioClient(CONFIG.server.url, { 
+      transports: ['websocket'],
+      reconnection: false
+    });
+    
+    await new Promise((resolve, reject) => {
+      socket.on('connect', () => {
+        socket.emit('create_room', {
+          nickname: 'TEMP_PLAYER',
+          settings: { sentenceCount: 5 }
+        }, async (response) => {
+          try {
+            runner.assert(response.success, 'Room creation failed');
+            const roomCode = response.roomCode;
+            
+            const roomDataBefore = await runner.redis.get(`room:${roomCode}`);
+            runner.assert(roomDataBefore, 'Room should exist after creation');
+            
+            socket.close();
+            
+            await new Promise(r => setTimeout(r, 1000));
+            
+            const roomDataAfter = await runner.redis.get(`room:${roomCode}`);
+            runner.assert(!roomDataAfter, 'Room should be deleted after player disconnect');
+            
+            const globalCount = await runner.redis.get('global:room_count');
+            console.log(`      (Global count after cleanup: ${globalCount})`);
+            
+            resolve();
+          } catch (err) {
+            socket.close();
+            reject(err);
+          }
+        });
+      });
+    });
+  });
+
   await runner.test('Room creation increments global count', async () => {
     const beforeCount = await runner.redis.get('global:room_count');
     const before = beforeCount ? parseInt(beforeCount) : 0;
@@ -450,6 +489,9 @@ async function runRoomManagerTests(runner) {
               const after = afterCount ? parseInt(afterCount) : 0;
               runner.assert(after > before, `Room count should increment (before: ${before}, after: ${after})`);
               socket.close();
+              
+              await new Promise(r => setTimeout(r, 1000));
+              
               resolve();
             } else {
               reject(new Error(response.error));
@@ -485,6 +527,9 @@ async function runRoomManagerTests(runner) {
               runner.assert(room.players[response.playerId], 'Player not found in room');
               
               socket.close();
+              
+              await new Promise(r => setTimeout(r, 1000));
+              
               resolve();
             } else {
               reject(new Error(response.error));
