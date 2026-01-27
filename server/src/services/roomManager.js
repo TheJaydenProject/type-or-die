@@ -399,7 +399,6 @@ class RoomManager {
   async removePlayer(roomCode, playerId) {
     return this.withLock(roomCode, async () => {
       const room = await this.getRoom(roomCode);
-      // If room is already gone, return deleted: true to allow socket cleanup
       if (!room) return { deleted: true };
 
       console.log(`Removing player ${playerId} from room ${roomCode}`);
@@ -417,18 +416,18 @@ class RoomManager {
       const remainingSpectators = (room.spectators || []).length;
 
       if (remainingPlayers === 0 && remainingSpectators === 0) {
-        console.log(`  ↳ Room ${roomCode} is empty, initiating delete...`);
-        // PASS THE IP FOR CLEANUP
+        console.log(`  ↳ Room ${roomCode} is empty, deleting immediately...`);
         await this.deleteRoom(roomCode, room.creatorIP);
         return { deleted: true };
       }
 
+      // Host migration logic...
       if (room.hostId === playerId) {
         const playerIds = Object.keys(room.players);
         if (playerIds.length > 0) {
           const oldHost = room.hostId;
           room.hostId = playerIds[0];
-          console.log(`Host migrated: ${oldHost} -> ${room.hostId} (${room.players[room.hostId].nickname})`);
+          console.log(`Host migrated: ${oldHost} -> ${room.hostId}`);
         }
       }
 

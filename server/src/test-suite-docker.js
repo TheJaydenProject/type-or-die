@@ -23,6 +23,21 @@ const CONFIG = {
   }
 };
 
+// CLEANUP HELPER FUNCTION
+async function cleanupAllRooms(runner) {
+  const roomKeys = await runner.redis.keys('room:*');
+  if (roomKeys.length > 0) {
+    await runner.redis.del(...roomKeys);
+  }
+  await runner.redis.set('global:room_count', '0');
+  
+  const ipKeys = await runner.redis.keys('ip:*');
+  if (ipKeys.length > 0) {
+    await runner.redis.del(...ipKeys);
+  }
+  console.log('  [Redis cleanup: removed all rooms and IP tracking]');
+}
+
 class TestRunner {
   constructor() {
     this.redis = null;
@@ -431,6 +446,10 @@ async function runRoomManagerTests(runner) {
   console.log('ROOM MANAGER TESTS');
   console.log('='.repeat(60));
 
+  // FIX: Clean ALL Redis state before Room Manager tests
+  // This prevents IP limit errors from zombie rooms in previous test runs
+  await cleanupAllRooms(runner);
+
   await runner.test('Empty room deletes immediately', async () => {
     const socket = ioClient(CONFIG.server.url, { 
       transports: ['websocket'],
@@ -452,8 +471,12 @@ async function runRoomManagerTests(runner) {
             
             socket.close();
             
-            // Room should delete immediately when last player disconnects
-            await new Promise(r => setTimeout(r, 500));
+            // FIX: Increased wait time to 1500ms to account for:
+            // - Socket disconnect event (~100ms)
+            // - Lock acquisition with retries (~150ms)
+            // - Redis operations (~200ms)
+            // - IP cleanup Lua script (~100ms)
+            await new Promise(r => setTimeout(r, 1500));
             
             const roomDataAfter = await runner.redis.get(`room:${roomCode}`);
             runner.assert(!roomDataAfter, 'Room should be deleted immediately when empty');

@@ -24,9 +24,10 @@ export function setupRoomLifecycleHandlers(io, socket) {
         ipAddress
       );
 
-      socket.join(room.roomCode);
+      // FIX: Set socket properties BEFORE callback to prevent race condition
       socket.playerId = playerId;
       socket.roomCode = room.roomCode;
+      socket.join(room.roomCode);
       
       room.players[playerId].socketId = socket.id;
       await roomManager.updateRoom(room.roomCode, room);
@@ -72,10 +73,11 @@ export function setupRoomLifecycleHandlers(io, socket) {
         ipAddress
       );
 
-      socket.join(room.roomCode);
+      // FIX: Set socket properties BEFORE callback to prevent race condition
       socket.playerId = playerId;
       socket.roomCode = room.roomCode;
       socket.nickname = nickname.trim().substring(0, CONSTANTS.MAX_NICKNAME_LENGTH);
+      socket.join(room.roomCode);
 
       if (role === 'PLAYER') {
         room.players[playerId].socketId = socket.id;

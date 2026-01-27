@@ -93,21 +93,34 @@ export function setupConnectionHandlers(io, socket) {
   });
 
   socket.on('disconnect', async () => {
+    console.log(`[DISCONNECT] Socket ${socket.id} disconnected`);
+    console.log(`[DISCONNECT]   - socket.roomCode: ${socket.roomCode || 'UNDEFINED'}`);
+    console.log(`[DISCONNECT]   - socket.playerId: ${socket.playerId || 'UNDEFINED'}`);
+    
     if (socket.roomCode && socket.playerId) {
+      console.log(`[DISCONNECT] Processing disconnect for player ${socket.playerId} in room ${socket.roomCode}`);
+      
       try {
         const room = await roomManager.getRoom(socket.roomCode);
         
-        if (!room || !room.players[socket.playerId]) {
-          console.log(`Player ${socket.playerId} disconnected but not in room anymore`);
+        if (!room) {
+          console.log(`[DISCONNECT] Room ${socket.roomCode} not found - already deleted?`);
+          return;
+        }
+        
+        if (!room.players[socket.playerId]) {
+          console.log(`[DISCONNECT] Player ${socket.playerId} not in room anymore`);
           return;
         }
 
         const player = room.players[socket.playerId];
+        console.log(`[DISCONNECT] Player status: ${player.status}, Room status: ${room.status}`);
+        
         const shouldUseGracePeriod = player.status === 'ALIVE' && 
                                       (room.status === 'PLAYING' || room.status === 'COUNTDOWN');
 
         if (shouldUseGracePeriod) {
-          // Active player in ongoing game - use grace period for reconnection
+          console.log(`[DISCONNECT] Using grace period for ${socket.playerId}`);
           player.status = 'DISCONNECTED';
           player.disconnectedAt = Date.now();
           
@@ -123,7 +136,7 @@ export function setupConnectionHandlers(io, socket) {
             try {
               const freshRoom = await roomManager.getRoom(socket.roomCode);
               if (freshRoom && freshRoom.players[socket.playerId]?.status === 'DISCONNECTED') {
-                console.log(`Grace period expired for ${socket.playerId}`);
+                console.log(`[DISCONNECT] Grace period expired for ${socket.playerId}`);
                 
                 playerEventQueues.delete(socket.playerId);
                 
@@ -137,7 +150,7 @@ export function setupConnectionHandlers(io, socket) {
                 }
               }
             } catch (err) {
-              console.error(`Error handling disconnect timeout for ${socket.playerId}:`, err);
+              console.error(`[DISCONNECT] Error handling disconnect timeout for ${socket.playerId}:`, err);
             } finally {
               disconnectTimers.delete(socket.playerId);
             }
@@ -145,26 +158,31 @@ export function setupConnectionHandlers(io, socket) {
           
           disconnectTimers.set(socket.playerId, timeoutId);
         } else {
-          console.log(`Immediately removing ${socket.playerId} (status: ${player.status}, room: ${room.status})`);
+          console.log(`[DISCONNECT] Immediately removing ${socket.playerId} (status: ${player.status}, room: ${room.status})`);
           
           cleanupDisconnectTimer(socket.playerId);
           playerEventQueues.delete(socket.playerId);
           
+          console.log(`[DISCONNECT] Calling roomManager.removePlayer...`);
           const result = await roomManager.removePlayer(socket.roomCode, socket.playerId);
+          console.log(`[DISCONNECT] removePlayer result: ${result ? (result.deleted ? 'DELETED' : 'UPDATED') : 'NULL'}`);
           
           if (result && !result.deleted && result.room) {
+            console.log(`[DISCONNECT] Room still exists with ${Object.keys(result.room.players).length} players`);
             socket.to(socket.roomCode).emit('player_left', { 
               playerId: socket.playerId,
               updatedPlayers: Object.values(result.room.players),
               newHostId: result.room.hostId
             });
           } else if (result && result.deleted) {
-            console.log(`Room ${socket.roomCode} deleted after last player left`);
+            console.log(`[DISCONNECT] ✓ Room ${socket.roomCode} deleted after last player left`);
           }
         }
       } catch (err) {
-        console.error(`Error in disconnect handler for ${socket.playerId}:`, err);
+        console.error(`[DISCONNECT] Error in disconnect handler for ${socket.playerId}:`, err);
       }
+    } else {
+      console.log(`[DISCONNECT] Socket ${socket.id} missing roomCode or playerId - no cleanup performed`);
     }
   });
 
