@@ -94,9 +94,11 @@ async function runInfrastructureTests(runner) {
   console.log('INFRASTRUCTURE TESTS');
   console.log('='.repeat(60));
 
-  await runner.test('Redis connection', async () => {
+  await runner.test('Redis connection & FLUSH', async () => {
     runner.redis = new Redis(CONFIG.redis);
     await runner.redis.ping();
+    // CRITICAL FIX: Clear Redis to remove zombie rooms from previous runs
+    await runner.redis.flushall();
   });
 
   await runner.test('Redis write/read operations', async () => {
@@ -442,7 +444,7 @@ async function runRoomManagerTests(runner) {
           settings: { sentenceCount: 5 }
         }, async (response) => {
           try {
-            runner.assert(response.success, 'Room creation failed');
+            runner.assert(response.success, `Room creation failed: ${response.error}`);
             const roomCode = response.roomCode;
             
             const roomDataBefore = await runner.redis.get(`room:${roomCode}`);
@@ -450,13 +452,11 @@ async function runRoomManagerTests(runner) {
             
             socket.close();
             
-            await new Promise(r => setTimeout(r, 1000));
+            // Room should delete immediately when last player disconnects
+            await new Promise(r => setTimeout(r, 100));
             
             const roomDataAfter = await runner.redis.get(`room:${roomCode}`);
-            runner.assert(!roomDataAfter, 'Room should be deleted after player disconnect');
-            
-            const globalCount = await runner.redis.get('global:room_count');
-            console.log(`      (Global count after cleanup: ${globalCount})`);
+            runner.assert(!roomDataAfter, 'Room should be deleted immediately when empty');
             
             resolve();
           } catch (err) {
