@@ -1,0 +1,19 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install ALL dependencies (including devDependencies for testing)
+RUN npm ci
+
+# Copy server source
+COPY server/src ./src
+
+# Copy test files
+COPY server/src/test-suite-docker.js ./src/
+
+EXPOSE 3001
+
+CMD ["node", "src/test-suite-docker.js"]
