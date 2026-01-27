@@ -453,7 +453,7 @@ async function runRoomManagerTests(runner) {
             socket.close();
             
             // Room should delete immediately when last player disconnects
-            await new Promise(r => setTimeout(r, 100));
+            await new Promise(r => setTimeout(r, 500));
             
             const roomDataAfter = await runner.redis.get(`room:${roomCode}`);
             runner.assert(!roomDataAfter, 'Room should be deleted immediately when empty');

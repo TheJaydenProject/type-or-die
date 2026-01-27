@@ -183,7 +183,6 @@ class RoomManager {
   async unregisterRoomCreation(hashedIP, roomCode) {
     const ipRoomsKey = `${this.IP_PREFIX}${hashedIP}:rooms`;
     
-    // Lua: Remove specific room code atomically
     const script = `
       local current = redis.call('get', KEYS[1])
       if not current then return 0 end
@@ -210,9 +209,14 @@ class RoomManager {
     `;
 
     try {
-      await redis.eval(script, 1, ipRoomsKey, roomCode, this.ROOM_TTL);
+      const removed = await redis.eval(script, 1, ipRoomsKey, roomCode, this.ROOM_TTL);
+      if (removed === 0) {
+        console.warn(`Room ${roomCode} not found in IP tracking for ${hashedIP}`);
+      }
+      return removed;
     } catch (err) {
       console.error(`Failed to unregister room ${roomCode} from IP ${hashedIP}:`, err.message);
+      return 0;
     }
   }
 
@@ -448,51 +452,60 @@ class RoomManager {
     });
   }
 
-  /**
-   * CRITICAL FIX: Robust Deletion Logic
-   * 1. Accepts creatorIP explicitly to perform atomic cleanup
-   * 2. Uses try/finally to GUARANTEE room key deletion
-   */
+
   async deleteRoom(roomCode, knownCreatorIP = null) {
     console.log(`Deleting room ${roomCode}...`);
     let creatorIP = knownCreatorIP;
-
-    // If we weren't passed the IP, try to fetch it from the room data
+    
+    // Fetch IP if not provided
     if (!creatorIP) {
       const room = await this.getRoom(roomCode);
       if (room) {
         creatorIP = room.creatorIP;
-        // Clean player event counts
+        // Clean player event counts while we have the room
         if (room.players) {
           Object.keys(room.players).forEach(pid => this.playerEventCounts.delete(pid));
         }
-      } else {
-        console.warn(`deleteRoom: Room ${roomCode} not found in Redis, attempting blind cleanup`);
       }
     }
 
-    try {
-      // 1. Clean IP Tracking (Atomic)
-      if (creatorIP) {
-        await this.unregisterRoomCreation(creatorIP, roomCode);
-      } else {
-        // Fallback: Scan keys if we lost the IP mapping
-        await this.cleanupOrphanedIPTracking(roomCode);
-      }
+    // Execute ALL cleanup operations in parallel with guaranteed completion
+    const cleanupResults = await Promise.allSettled([
+      // 1. IP tracking (atomic Lua script)
+      creatorIP 
+        ? this.unregisterRoomCreation(creatorIP, roomCode)
+        : this.cleanupOrphanedIPTracking(roomCode),
+      
+      // 2. Global room count
+      redis.decr(this.GLOBAL_ROOM_COUNT),
+      
+      // 3. Room key deletion (MUST succeed)
+      redis.del(`${this.ROOM_PREFIX}${roomCode}`)
+    ]);
 
-      // 2. Decrement Global Count
-      await redis.decr(this.GLOBAL_ROOM_COUNT);
+    // Verify critical operations succeeded
+    const [ipCleanup, countDecr, roomDeletion] = cleanupResults;
+    
+    if (roomDeletion.status === 'rejected') {
+      console.error(`CRITICAL: Room key deletion failed for ${roomCode}:`, roomDeletion.reason);
+    } else if (roomDeletion.value === 0) {
+      console.warn(`Room key ${roomCode} was already missing`);
+    }
+    
+    if (ipCleanup.status === 'rejected') {
+      console.error(`IP cleanup failed for ${roomCode}:`, ipCleanup.reason);
+    }
+    
+    if (countDecr.status === 'rejected') {
+      console.error(`Global count decrement failed:`, countDecr.reason);
+    }
 
-    } catch (err) {
-      console.error(`Non-fatal error during IP cleanup of ${roomCode}:`, err.message);
-    } finally {
-      // 3. ALWAYS Delete the room key
-      const deleted = await redis.del(`${this.ROOM_PREFIX}${roomCode}`);
-      if (deleted > 0) {
-        console.log(`✓ Room deleted from Redis: ${roomCode}`);
-      } else {
-        console.warn(`⚠ Room key ${roomCode} was already missing or failed to delete`);
-      }
+    // Log success
+    const failures = cleanupResults.filter(r => r.status === 'rejected').length;
+    if (failures === 0) {
+      console.log(`✓ Room ${roomCode} fully deleted (all 3 cleanups succeeded)`);
+    } else {
+      console.warn(`⚠ Room ${roomCode} deleted with ${failures} cleanup failures`);
     }
   }
 
