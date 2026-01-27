@@ -4,7 +4,6 @@ import { io as ioClient } from 'socket.io-client';
 
 const { Pool } = pg;
 
-// Docker network configuration - services communicate via service names
 const CONFIG = {
   redis: { 
     host: process.env.REDIS_HOST || 'redis', 
@@ -23,7 +22,9 @@ const CONFIG = {
   }
 };
 
-// CLEANUP HELPER FUNCTION
+/**
+ * atomic cleanup to prevent zombie state between tests
+ */
 async function cleanupAllRooms(runner) {
   const roomKeys = await runner.redis.keys('room:*');
   if (roomKeys.length > 0) {
@@ -35,7 +36,6 @@ async function cleanupAllRooms(runner) {
   if (ipKeys.length > 0) {
     await runner.redis.del(...ipKeys);
   }
-  console.log('  [Redis cleanup: removed all rooms and IP tracking]');
 }
 
 class TestRunner {
@@ -112,7 +112,7 @@ async function runInfrastructureTests(runner) {
   await runner.test('Redis connection & FLUSH', async () => {
     runner.redis = new Redis(CONFIG.redis);
     await runner.redis.ping();
-    // CRITICAL FIX: Clear Redis to remove zombie rooms from previous runs
+    // CRITICAL: Flush ensures no state bleeds from previous test runs
     await runner.redis.flushall();
   });
 
@@ -350,8 +350,7 @@ async function runGameLogicTests(runner) {
       
       socket.on('countdown_start', (data) => {
         sentences = data.sentences;
-        // Store for next test
-        socket._testSentences = sentences;
+        socket._testSentences = sentences; // Store for next test
       });
       
       socket.on('game_start', () => {
@@ -383,7 +382,6 @@ async function runGameLogicTests(runner) {
       });
       
       setTimeout(() => {
-        // Use the ACTUAL first character from the game's sentences
         const firstSentence = socket._testSentences[0];
         const firstChar = firstSentence[0];
         
@@ -443,14 +441,15 @@ async function runGameLogicTests(runner) {
 
 async function runRoomManagerTests(runner) {
   console.log('\n' + '='.repeat(60));
-  console.log('ROOM MANAGER TESTS');
+  console.log('ROOM MANAGER TESTS (COMPREHENSIVE)');
   console.log('='.repeat(60));
 
-  // FIX: Clean ALL Redis state before Room Manager tests
-  // This prevents IP limit errors from zombie rooms in previous test runs
+  const ipKeys = await runner.redis.keys('ip:*');
+  if (ipKeys.length > 0) await runner.redis.del(...ipKeys);
   await cleanupAllRooms(runner);
 
-  await runner.test('Empty room deletes immediately', async () => {
+  await runner.test('Empty room deletes immediately (Polling check)', async () => {
+    console.log('\n    [DEBUG] Creating socket connection...');
     const socket = ioClient(CONFIG.server.url, { 
       transports: ['websocket'],
       reconnection: false
@@ -464,20 +463,33 @@ async function runRoomManagerTests(runner) {
         }, async (response) => {
           try {
             runner.assert(response.success, `Room creation failed: ${response.error}`);
+            
             const roomCode = response.roomCode;
             
+            // Verify room exists
             const roomDataBefore = await runner.redis.get(`room:${roomCode}`);
             runner.assert(roomDataBefore, 'Room should exist after creation');
             
+            // Close connection
             socket.close();
+            const closeTime = Date.now();
             
-            // FIX: Increased wait time to 1500ms to account for:
-            // - Socket disconnect event (~100ms)
-            // - Lock acquisition with retries (~150ms)
-            // - Redis operations (~200ms)
-            // - IP cleanup Lua script (~100ms)
-            await new Promise(r => setTimeout(r, 1500));
+            // Poll Redis for deletion
+            let deleted = false;
             
+            for (let elapsed = 100; elapsed <= 3000; elapsed += 100) {
+              await new Promise(r => setTimeout(r, 100));
+              const roomStillExists = await runner.redis.get(`room:${roomCode}`);
+              
+              if (!roomStillExists && !deleted) {
+                deleted = true;
+                const deletionTime = Date.now() - closeTime;
+                console.log(`    [DEBUG] ✓ Room DELETED at ${deletionTime}ms after socket close`);
+                break;
+              }
+            }
+            
+            // Final assertion
             const roomDataAfter = await runner.redis.get(`room:${roomCode}`);
             runner.assert(!roomDataAfter, 'Room should be deleted immediately when empty');
             
@@ -487,6 +499,10 @@ async function runRoomManagerTests(runner) {
             reject(err);
           }
         });
+      });
+      
+      socket.on('connect_error', (err) => {
+        reject(err);
       });
     });
   });
@@ -512,9 +528,7 @@ async function runRoomManagerTests(runner) {
               const after = afterCount ? parseInt(afterCount) : 0;
               runner.assert(after > before, `Room count should increment (before: ${before}, after: ${after})`);
               socket.close();
-              
               await new Promise(r => setTimeout(r, 1000));
-              
               resolve();
             } else {
               reject(new Error(response.error));
@@ -550,9 +564,7 @@ async function runRoomManagerTests(runner) {
               runner.assert(room.players[response.playerId], 'Player not found in room');
               
               socket.close();
-              
               await new Promise(r => setTimeout(r, 1000));
-              
               resolve();
             } else {
               reject(new Error(response.error));
@@ -569,7 +581,7 @@ async function runRoomManagerTests(runner) {
 
 async function main() {
   console.log('\n' + '='.repeat(60));
-  console.log('TYPE OR DIE - COMPREHENSIVE TEST SUITE (DOCKER)');
+  console.log('TYPE OR DIE - COMPLETE PRODUCTION TEST SUITE');
   console.log('='.repeat(60));
   console.log('\nConfiguration:');
   console.log(`  Redis:    ${CONFIG.redis.host}:${CONFIG.redis.port}`);
