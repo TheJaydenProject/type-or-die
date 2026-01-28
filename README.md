@@ -316,6 +316,7 @@ Execute the complete test suite
 
 ```sh
 docker-compose -f docker-compose.local.yml down -v
+
 docker-compose -f docker-compose.local.yml --profile test up test
 ```
 
