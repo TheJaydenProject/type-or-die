@@ -15,11 +15,9 @@
   <p align="center">
     Real-time multiplayer typing survival game with Russian roulette mechanics
     <br />
-    <a href="https://github.com/thejaydenproject/type-or-die"><strong>Explore the docs »</strong></a>
+    <a href="https://typeordie.org/"><strong>Play Demo »</strong></a>
     <br />
     <br />
-    <a href="typeordie.org">Play it</a>
-    ·
     <a href="https://github.com/thejaydenproject/type-or-die/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
     ·
     <a href="https://github.com/thejaydenproject/type-or-die/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
