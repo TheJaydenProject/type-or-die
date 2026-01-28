@@ -8,11 +8,8 @@ COPY package*.json ./
 # Install ALL dependencies (including devDependencies for testing)
 RUN npm ci
 
-# Copy server source
+# Copy server source (includes lua directory)
 COPY server/src ./src
-
-# Copy test files
-COPY server/src/test-suite-docker.js ./src/
 
 EXPOSE 3001
 

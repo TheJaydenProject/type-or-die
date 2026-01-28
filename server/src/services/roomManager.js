@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import redis from '../config/redis.js';
+import luaScripts from '../utils/luaScripts.js';
 
 class RoomManager {
   constructor() {
@@ -42,15 +43,13 @@ class RoomManager {
 
   async releaseLock(roomCode, lockValue) {
     const lockKey = `${this.LOCK_PREFIX}${roomCode}`;
-    const script = `
-      if redis.call("get", KEYS[1]) == ARGV[1] then
-        return redis.call("del", KEYS[1])
-      else
-        return 0
-      end
-    `;
     try {
-      await redis.eval(script, 1, lockKey, lockValue);
+      await redis.eval(
+        luaScripts.getScript('releaseLock'),
+        1,
+        lockKey,
+        lockValue
+      );
     } catch (err) {
       console.error(`Lock release failed for ${roomCode}:`, err.message);
     }
@@ -137,35 +136,17 @@ class RoomManager {
     return true;
   }
 
-  // --- ATOMIC IP TRACKING (LUA SCRIPTS) ---
 
   async registerRoomCreation(hashedIP, roomCode) {
     const ipRoomsKey = `${this.IP_PREFIX}${hashedIP}:rooms`;
-    
-    // Lua: Check limit, push if allowed, expire
-    const script = `
-      local current = redis.call('get', KEYS[1])
-      local rooms = {}
-      if current then
-        rooms = cjson.decode(current)
-      end
-      
-      if #rooms >= tonumber(ARGV[1]) then
-        return 0 -- Limit reached
-      end
-      
-      table.insert(rooms, ARGV[2])
-      redis.call('set', KEYS[1], cjson.encode(rooms), 'EX', ARGV[3])
-      return 1 -- Success
-    `;
 
     try {
       const result = await redis.eval(
-        script, 
-        1, 
-        ipRoomsKey, 
-        this.MAX_ROOMS_PER_IP, 
-        roomCode, 
+        luaScripts.getScript('registerRoomCreation'),
+        1,
+        ipRoomsKey,
+        this.MAX_ROOMS_PER_IP,
+        roomCode,
         this.ROOM_TTL
       );
       
@@ -182,34 +163,16 @@ class RoomManager {
 
   async unregisterRoomCreation(hashedIP, roomCode) {
     const ipRoomsKey = `${this.IP_PREFIX}${hashedIP}:rooms`;
-    
-    const script = `
-      local current = redis.call('get', KEYS[1])
-      if not current then return 0 end
-      
-      local rooms = cjson.decode(current)
-      local new_rooms = {}
-      local removed = 0
-      
-      for i, code in ipairs(rooms) do
-        if code ~= ARGV[1] then
-          table.insert(new_rooms, code)
-        else
-          removed = 1
-        end
-      end
-      
-      if #new_rooms == 0 then
-        redis.call('del', KEYS[1])
-      else
-        redis.call('set', KEYS[1], cjson.encode(new_rooms), 'EX', ARGV[2])
-      end
-      
-      return removed
-    `;
 
     try {
-      const removed = await redis.eval(script, 1, ipRoomsKey, roomCode, this.ROOM_TTL);
+      const removed = await redis.eval(
+        luaScripts.getScript('unregisterRoomCreation'),
+        1,
+        ipRoomsKey,
+        roomCode,
+        this.ROOM_TTL
+      );
+      
       if (removed === 0) {
         console.warn(`Room ${roomCode} not found in IP tracking for ${hashedIP}`);
       }
@@ -563,84 +526,39 @@ class RoomManager {
   }
 
   async atomicCharUpdate(roomCode, playerId, char, charIndex) {
-    return this.withLock(roomCode, async () => {
+    try {
+      const result = await redis.eval(
+        luaScripts.getScript('atomicCharUpdate'),
+        1,
+        `${this.ROOM_PREFIX}${roomCode}`,
+        playerId,
+        char,
+        charIndex,
+        Date.now(),
+        this.ROOM_TTL
+      );
+      
+      if (!result) return null;
+      
+      const parsed = JSON.parse(result);
       const room = await this.getRoom(roomCode);
-      if (!room || room.status !== 'PLAYING') return null;
-
-      const player = room.players[playerId];
-      if (!player || player.status !== 'ALIVE') return null;
-
-      const currentSentence = room.sentences[player.currentSentenceIndex];
-      const words = currentSentence.split(' ');
-      const currentWord = words[player.currentWordIndex];
-      const targetChar = currentWord[player.currentCharInWord];
-
-      if (char === targetChar) {
-        player.currentCharInWord++;
-        player.currentCharIndex++;
-        player.totalTypedChars++;
-        player.totalCorrectChars++;
-        
-        if (!player.sentenceCharCount) player.sentenceCharCount = 0;
-        player.sentenceCharCount++;
-
-        if (room.gameStartedAt) {
-          const totalMinutes = (Date.now() - room.gameStartedAt) / 1000 / 60;
-          if (totalMinutes > 0) {
-            player.averageWPM = Math.round((player.totalCorrectChars / 5) / totalMinutes);
-          }
+      
+      if (!room) return null;
+      
+      return {
+        room,
+        player: parsed.player,
+        result: {
+          type: parsed.type,
+          wordIndex: parsed.wordIndex,
+          charInWord: parsed.charInWord,
+          ...parsed.extraData
         }
-        
-        const timeElapsed = (Date.now() - player.sentenceStartTime) / 1000 / 60;
-        if (timeElapsed > 0) {
-          player.currentSessionWPM = Math.round((player.sentenceCharCount / 5) / timeElapsed);
-        }
-
-        let resultType = 'CORRECT';
-        let extraData = {};
-
-        if (player.currentCharInWord >= currentWord.length) {
-          if (player.currentWordIndex >= words.length - 1) {
-            resultType = 'SENTENCE_COMPLETE';
-            player.completedSentences++;
-            player.currentSentenceIndex++;
-            player.currentWordIndex = 0;
-            player.currentCharInWord = 0;
-            player.currentCharIndex = 0;
-            player.sentenceCharCount = 0;
-            
-            const now = Date.now();
-            extraData.timeUsed = (now - player.sentenceStartTime) / 1000;
-            player.sentenceStartTime = now;
-            extraData.newSentenceStartTime = now;
-            
-            player.sentenceHistory.push({
-              sentenceIndex: player.currentSentenceIndex - 1,
-              completed: true,
-              wpm: player.currentSessionWPM,
-              timeUsed: extraData.timeUsed
-            });
-          } else {
-            player.currentWordIndex++;
-            player.currentCharInWord = 0;
-          }
-        }
-
-        await this.updateRoom(roomCode, room);
-        
-        return {
-          room,
-          player,
-          result: {
-            type: resultType,
-            wordIndex: player.currentWordIndex,
-            charInWord: player.currentCharInWord,
-            ...extraData
-          }
-        };
-      }
-      return null; 
-    });
+      };
+    } catch (err) {
+      console.error(`atomicCharUpdate failed for ${roomCode}:`, err.message);
+      return null;
+    }
   }
 }
 
