@@ -151,6 +151,8 @@ async function processMistypeEvent(io, socket, data) {
     const roll = crypto.randomInt(1, odds + 1);
     const survived = roll > 1;
 
+    if (!Array.isArray(player.rouletteHistory)) player.rouletteHistory = [];
+
     player.rouletteHistory.push({
       sentenceIndex: sentenceIndex,
       odds: `1/${odds}`,
@@ -172,6 +174,7 @@ async function processMistypeEvent(io, socket, data) {
       });
     } else {
       player.status = 'DEAD';
+      if (!Array.isArray(player.sentenceHistory)) player.sentenceHistory = [];
       player.sentenceHistory.push({
         sentenceIndex: sentenceIndex,
         completed: false,
@@ -213,6 +216,7 @@ async function processTimeoutEvent(io, socket, data) {
   const odds = player.rouletteOdds;
   const roll = crypto.randomInt(1, odds + 1);
   const survived = roll > 1;
+  if (!Array.isArray(player.rouletteHistory)) player.rouletteHistory = [];
   
   player.rouletteHistory.push({
     sentenceIndex: sentenceIndex,
@@ -240,6 +244,7 @@ async function processTimeoutEvent(io, socket, data) {
     await roomManager.updateRoom(roomCode, room);
   } else {
     player.status = 'DEAD';
+    if (!Array.isArray(player.sentenceHistory)) player.sentenceHistory = [];
     player.sentenceHistory.push({
       sentenceIndex: sentenceIndex,
       completed: false,

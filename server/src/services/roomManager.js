@@ -314,7 +314,7 @@ class RoomManager {
       const sanitizedNickname = this.sanitizeNickname(nickname);
 
       if (room.status === 'PLAYING' || room.status === 'COUNTDOWN') {
-        if (!room.spectators) room.spectators = [];
+        if (!Array.isArray(room.spectators)) room.spectators = [];
         room.spectators.push(playerId);
         await this.updateRoom(roomCode, room);
         return { room, role: 'SPECTATOR' };
@@ -371,9 +371,8 @@ class RoomManager {
         delete room.players[playerId];
       }
       
-      if (room.spectators) {
-        room.spectators = room.spectators.filter(id => id !== playerId);
-      }
+      if (!Array.isArray(room.spectators)) room.spectators = [];
+      room.spectators = room.spectators.filter(id => id !== playerId);
 
       const remainingPlayers = Object.keys(room.players || {}).length;
       const remainingSpectators = (room.spectators || []).length;

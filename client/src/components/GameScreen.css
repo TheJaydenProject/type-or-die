@@ -85,8 +85,9 @@
    ============================================ */
 
 @keyframes brutal-flash {
-  0% { background-color: var(--accent-red); }
-  100% { background-color: var(--bg-app); }
+  0% { background-color: transparent; }
+  10% { background-color: rgba(255, 0, 0, 0.5); }
+  100% { background-color: transparent; }
 }
 
 @keyframes pulse-critical {
