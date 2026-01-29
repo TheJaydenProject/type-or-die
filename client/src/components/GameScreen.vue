@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import GameController from './game/GameController.js'
 import StatusHUD from './game/StatusHUD.vue'
 import TypingField from './game/TypingField.vue'
@@ -39,21 +39,26 @@ const isHost = computed(() => props.room.hostId === props.playerId)
 const initializePlayers = () => {
   const initialPlayers = {}
   Object.keys(props.room.players).forEach(pId => {
+    const rawP = props.room.players[pId]
+    
     initialPlayers[pId] = {
-      ...props.room.players[pId],
-      currentSentenceIndex: 0,
-      currentWordIndex: 0,
-      currentCharInWord: 0,
-      currentCharIndex: 0,
-      completedSentences: 0,
-      totalCorrectChars: 0,
-      totalTypedChars: 0,
-      totalMistypes: 0,
-      averageWPM: 0,
-      mistakeStrikes: 0,
-      status: 'ALIVE',
-      sentenceStartTime: Date.now(),
-      calculatedTime: 20
+      ...rawP,
+      currentSentenceIndex: rawP.currentSentenceIndex || 0,
+      currentWordIndex: rawP.currentWordIndex || 0,
+      currentCharInWord: rawP.currentCharInWord || 0,
+      currentCharIndex: rawP.currentCharIndex || 0,
+      completedSentences: rawP.completedSentences || 0,
+      totalCorrectChars: rawP.totalCorrectChars || 0,
+      totalTypedChars: rawP.totalTypedChars || 0,
+      totalMistypes: rawP.totalMistypes || 0,
+      averageWPM: rawP.averageWPM || 0,
+      mistakeStrikes: rawP.mistakeStrikes || 0,
+      status: rawP.status || 'ALIVE',
+      
+      sentenceStartTime: rawP.sentenceStartTime || Date.now(),
+      
+      calculatedTime: 20,
+      activeRoulette: null
     }
   })
   players.value = initialPlayers
@@ -146,6 +151,16 @@ const startGameLoop = () => {
     }
   }, 100)
 }
+
+// --- WATCHERS ---
+watch(
+  [() => props.isSpectator, spectatingPlayerId], 
+  () => {
+    // When we switch targets, immediately check if the new target 
+    // has an active roulette animation running
+    syncRouletteUI()
+  }
+)
 
 // --- INPUT HANDLING ---
 const handleKeyPress = (e) => {
@@ -260,32 +275,49 @@ const onPlayerStrike = (data) => {
   }
 }
 
-const onRouletteResult = (data) => {
-  const isTarget = data.playerId === props.playerId || 
-                   (props.isSpectator && data.playerId === spectatingPlayerId.value)
-
-  if (isTarget) {
-    rouletteResult.value = data
+const syncRouletteUI = () => {
+  const target = displayTarget.value
+  
+  if (target && target.activeRoulette && target.activeRoulette.expiresAt > Date.now()) {
+    rouletteResult.value = target.activeRoulette
     showRoulette.value = true
+    isRouletteActive.value = (target.id === props.playerId)
+  } else {
+    showRoulette.value = false
+    rouletteResult.value = null
+    isRouletteActive.value = false
+  }
+}
+
+const onRouletteResult = (data) => {
+  // 1. Store the data on the specific player (Persistence)
+  if (players.value[data.playerId]) {
+    players.value[data.playerId].activeRoulette = {
+      ...data,
+      expiresAt: Date.now() + 5000 // Valid for 5 seconds
+    }
     
-    // Update local start time immediately so timer syncs correctly when animation ends
-    if (data.sentenceStartTime && players.value[data.playerId]) {
+    // Update local start time immediately (Timer Sync)
+    if (data.sentenceStartTime) {
       players.value[data.playerId].sentenceStartTime = data.sentenceStartTime
     }
-    
-    // Only block INPUT if it is actually US playing
-    if (data.playerId === props.playerId) {
-      isRouletteActive.value = true
-      if (players.value[props.playerId]) {
-        players.value[props.playerId].mistakeStrikes = 0
-      }
-    }
-    
+
+    // Auto-clear the state after 5 seconds
     setTimeout(() => {
-      showRoulette.value = false
-      rouletteResult.value = null
-      isRouletteActive.value = false
+      if (players.value[data.playerId]) {
+        players.value[data.playerId].activeRoulette = null
+      }
+      if (displayTarget.value?.id === data.playerId) {
+        syncRouletteUI()
+        
+        if (!props.isSpectator && data.playerId === props.playerId && players.value[props.playerId]?.status === 'ALIVE') {
+        }
+      }
     }, 5000)
+  }
+
+  if (displayTarget.value?.id === data.playerId) {
+    syncRouletteUI()
   }
 }
 
