@@ -1,6 +1,79 @@
+<script setup>
+import { ref, computed } from 'vue'
+
+const props = defineProps({
+  gameEndData: Object,
+  room: Object,
+  playerId: String,
+  sentences: Array
+})
+
+const emit = defineEmits(['mainMenu', 'replay'])
+
+const activeTab = ref('leaderboard')
+
+// --- COMPUTED PROPERTIES ---
+
+const isValidSession = computed(() => {
+  return props.gameEndData && props.room && props.playerId
+})
+
+const winnerId = computed(() => props.gameEndData?.winnerId)
+const finalStats = computed(() => props.gameEndData?.finalStats || {})
+const currentPlayer = computed(() => finalStats.value[props.playerId] || {})
+
+const totalSentences = computed(() => {
+  return props.sentences?.length || props.room?.settings?.sentenceCount || 0
+})
+
+const grade = computed(() => {
+  const p = currentPlayer.value
+  
+  if (!p || p.status === 'SPECTATOR') return '-'
+  if (p.status === 'DEAD') return 'F'
+  if (!p.totalTypedChars) return '-'
+
+  const acc = p.totalCorrectChars / p.totalTypedChars
+
+  if (acc === 1) return 'SS'
+  if (acc > 0.98) return 'S'
+  if (acc > 0.95) return 'A'
+  if (acc > 0.90) return 'B'
+  return 'C'
+})
+
+const accuracy = computed(() => {
+  const p = currentPlayer.value
+  return p.totalTypedChars > 0
+    ? ((p.totalCorrectChars / p.totalTypedChars) * 100).toFixed(2)
+    : "0.00"
+})
+
+const sortedPlayers = computed(() => {
+  return Object.values(finalStats.value).sort((a, b) => {
+    if (a.id === winnerId.value) return -1
+    if (b.id === winnerId.value) return 1
+    if (a.status === 'ALIVE' && b.status !== 'ALIVE') return -1
+    if (a.status !== 'ALIVE' && b.status === 'ALIVE') return 1
+    return b.completedSentences - a.completedSentences
+  })
+})
+
+const rouletteHistoryReversed = computed(() => {
+  const history = currentPlayer.value.rouletteHistory || []
+  return [...history].reverse()
+})
+
+// --- ACTIONS ---
+
+const onMainMenu = () => emit('mainMenu')
+const onReplay = () => emit('replay')
+</script>
+
 <template>
   <div class="results-overlay">
-    <div v-if="!gameEndData || !room || !playerId" class="terminal-results error-state">
+    
+    <div v-if="!isValidSession" class="terminal-results error-state">
       <div class="results-header">
         <span>FATAL ERROR</span>
         <span>DATA_CORRUPT</span>
@@ -8,30 +81,34 @@
       <div class="error-body">
         <p>CRITICAL SYSTEM FAILURE</p>
         <p>SESSION LOST</p>
-        <button @click="$emit('mainMenu')" class="results-btn primary">
+        <button @click="onMainMenu" class="results-btn primary">
           FORCE ABORT
         </button>
       </div>
     </div>
 
     <div v-else class="terminal-results">
+      
       <div class="results-header">
         <span class="header-title">MISSION REPORT</span>
         <span class="header-id">ID: {{ room.roomCode }}</span>
       </div>
 
       <div class="results-grid">
-        <!-- LEFT COLUMN: SUMMARY -->
+        
         <div class="results-summary">
           <div class="grade-container">
             <span class="grade-label">ASSESSMENT</span>
-            <span :class="`grade-value grade-${grade}`">{{ grade }}</span>
+            <span class="grade-value" :class="`grade-${grade}`">{{ grade }}</span>
           </div>
 
           <div class="stats-block">
             <div class="stat-row">
               <span class="stat-label">STATUS</span>
-              <span :class="['stat-value', currentPlayer.status === 'DEAD' ? 'status-dead' : 'status-alive']">
+              <span 
+                class="stat-value" 
+                :class="currentPlayer.status === 'DEAD' ? 'status-dead' : 'status-alive'"
+              >
                 {{ currentPlayer.status || 'SPECTATOR' }}
               </span>
             </div>
@@ -54,23 +131,25 @@
           </div>
         </div>
 
-        <!-- RIGHT COLUMN: DATA TABS -->
         <div class="results-data">
           <div class="tabs-nav">
             <button 
-              :class="['tab-btn', { 'active': activeTab === 'leaderboard' }]"
+              class="tab-btn" 
+              :class="{ active: activeTab === 'leaderboard' }"
               @click="activeTab = 'leaderboard'"
             >
               RANKING
             </button>
             <button 
-              :class="['tab-btn', { 'active': activeTab === 'sentences' }]"
+              class="tab-btn" 
+              :class="{ active: activeTab === 'sentences' }"
               @click="activeTab = 'sentences'"
             >
               LOGS
             </button>
             <button 
-              :class="['tab-btn', { 'active': activeTab === 'roulette' }]"
+              class="tab-btn" 
+              :class="{ active: activeTab === 'roulette' }"
               @click="activeTab = 'roulette'"
             >
               CASUALTY
@@ -78,163 +157,79 @@
           </div>
 
           <div class="tab-viewport">
-            <!-- LEADERBOARD TAB -->
+            
             <div v-if="activeTab === 'leaderboard'" class="data-list">
               <div 
-                v-for="(player, i) in sortedPlayers" 
-                :key="player.id"
-                :class="[
-                  'data-row',
-                  { 'is-self': player.id === playerId },
-                  { 'is-dead': player.status === 'DEAD' }
-                ]"
+                v-for="(p, i) in sortedPlayers" 
+                :key="p.id" 
+                class="data-row"
+                :class="{ 
+                  'is-self': p.id === playerId, 
+                  'is-dead': p.status === 'DEAD' 
+                }"
               >
-                <span class="row-rank">{{ String(i + 1).padStart(2, '0') }}</span>
+                <span class="row-rank">{{ (i + 1).toString().padStart(2, '0') }}</span>
                 <span class="row-name">
-                  {{ player.nickname }}
-                  <span v-if="player.id === winnerId" class="badge-win">[WINNER]</span>
-                  <span v-if="player.status === 'DEAD'" class="badge-dead">[KIA]</span>
+                  {{ p.nickname }}
+                  <span v-if="p.id === winnerId" class="badge-win">[WINNER]</span>
+                  <span v-if="p.status === 'DEAD'" class="badge-dead">[KIA]</span>
                 </span>
-                <span class="row-stat">{{ player.completedSentences }}/{{ totalSentences }}</span>
-                <span class="row-stat">{{ player.averageWPM }} WPM</span>
+                <span class="row-stat">{{ p.completedSentences }}/{{ totalSentences }}</span>
+                <span class="row-stat">{{ p.averageWPM }} WPM</span>
               </div>
             </div>
 
-            <!-- SENTENCES TAB -->
-            <div v-else-if="activeTab === 'sentences'" class="data-list">
+            <div v-if="activeTab === 'sentences'" class="data-list">
               <div 
-                v-for="(sentence, idx) in sentenceHistory" 
-                :key="idx"
+                v-for="(s, idx) in (currentPlayer.sentenceHistory || [])" 
+                :key="idx" 
                 class="data-row history-row"
               >
-                <span class="row-index">{{ String(sentence.sentenceIndex + 1).padStart(2, '0') }}</span>
+                <span class="row-index">{{ (s.sentenceIndex + 1).toString().padStart(2, '0') }}</span>
                 <span class="row-content">
-                  {{ sentence.completed ? 'COMPLETED' : `FAILED: ${sentence.deathReason}` }}
+                  {{ s.completed ? 'COMPLETED' : `FAILED: ${s.deathReason}` }}
                 </span>
-                <span class="row-stat">{{ sentence.wpm || 0 }} WPM</span>
-                <span class="row-stat">{{ sentence.timeUsed.toFixed(1) }}s</span>
+                <span class="row-stat">{{ s.wpm || 0 }} WPM</span>
+                <span class="row-stat">{{ s.timeUsed.toFixed(1) }}s</span>
               </div>
-              <div v-if="!sentenceHistory.length" class="empty-state">
+              <div v-if="!currentPlayer.sentenceHistory?.length" class="empty-state">
                 NO_DATA_AVAILABLE
               </div>
             </div>
 
-            <!-- ROULETTE TAB -->
-            <div v-else-if="activeTab === 'roulette'" class="data-list">
+            <div v-if="activeTab === 'roulette'" class="data-list">
               <div 
-                v-for="(roulette, i) in reversedRouletteHistory" 
-                :key="i"
-                :class="['data-row', 'roulette-row', roulette.survived ? 'survived' : 'fatal']"
+                v-for="(r, i) in rouletteHistoryReversed" 
+                :key="i" 
+                class="data-row roulette-row"
+                :class="r.survived ? 'survived' : 'fatal'"
               >
-                <span class="row-odds">{{ roulette.odds }}</span>
-                <span class="row-chamber">[{{ roulette.survived ? 'EMPTY' : 'BULLET' }}]</span>
-                <span class="row-result">{{ roulette.survived ? 'SURVIVED' : 'FATAL' }}</span>
+                <span class="row-odds">{{ r.odds }}</span>
+                <span class="row-chamber">[{{ r.survived ? 'EMPTY' : 'BULLET' }}]</span>
+                <span class="row-result">{{ r.survived ? 'SURVIVED' : 'FATAL' }}</span>
               </div>
-              <div v-if="!reversedRouletteHistory.length" class="empty-state">
+              <div v-if="!currentPlayer.rouletteHistory?.length" class="empty-state">
                 NO_CASUALTY_EVENTS
               </div>
             </div>
+
           </div>
         </div>
       </div>
 
       <div class="results-actions">
-        <button @click="$emit('replay')" class="results-btn">
+        <button class="results-btn" @click="onReplay">
           RETURN TO LOBBY
         </button>
-        <button @click="$emit('mainMenu')" class="results-btn">
+        <button class="results-btn" @click="onMainMenu">
           EXIT TO MENU
         </button>
       </div>
+
     </div>
   </div>
 </template>
 
-<script setup>
-import { ref, computed } from 'vue'
-
-const props = defineProps({
-  gameEndData: {
-    type: Object,
-    required: true
-  },
-  room: {
-    type: Object,
-    required: true
-  },
-  playerId: {
-    type: String,
-    required: true
-  },
-  sentences: {
-    type: Array,
-    required: true
-  }
-})
-
-defineEmits(['mainMenu', 'replay'])
-
-const activeTab = ref('leaderboard')
-
-const winnerId = computed(() => 
-  props.gameEndData?.winnerId
-)
-
-const finalStats = computed(() => 
-  props.gameEndData?.finalStats || {}
-)
-
-const currentPlayer = computed(() => 
-  finalStats.value[props.playerId] || {}
-)
-
-const totalSentences = computed(() => 
-  props.sentences?.length || props.room.settings?.sentenceCount || 0
-)
-
-const grade = computed(() => {
-  const player = currentPlayer.value
-  
-  if (!player || player.status === 'SPECTATOR') return '-'
-  if (player.status === 'DEAD') return 'F'
-  if (!player.totalTypedChars) return '-'
-  
-  const acc = player.totalCorrectChars / player.totalTypedChars
-  
-  if (acc === 1) return 'SS'
-  if (acc > 0.98) return 'S'
-  if (acc > 0.95) return 'A'
-  if (acc > 0.90) return 'B'
-  return 'C'
-})
-
-const accuracy = computed(() => {
-  const player = currentPlayer.value
-  if (player.totalTypedChars > 0) {
-    return ((player.totalCorrectChars / player.totalTypedChars) * 100).toFixed(2)
-  }
-  return "0.00"
-})
-
-const sortedPlayers = computed(() => {
-  return Object.values(finalStats.value).sort((a, b) => {
-    if (a.id === winnerId.value) return -1
-    if (b.id === winnerId.value) return 1
-    if (a.status === 'ALIVE' && b.status !== 'ALIVE') return -1
-    if (a.status !== 'ALIVE' && b.status === 'ALIVE') return 1
-    return b.completedSentences - a.completedSentences
-  })
-})
-
-const sentenceHistory = computed(() => 
-  currentPlayer.value.sentenceHistory || []
-)
-
-const reversedRouletteHistory = computed(() => 
-  [...(currentPlayer.value.rouletteHistory || [])].reverse()
-)
-</script>
-
-<style>
+<style scoped>
 @import './GameEndScreen.css';
 </style>

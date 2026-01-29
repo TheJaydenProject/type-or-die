@@ -29,13 +29,15 @@ export function setupGameFlowHandlers(io, socket) {
       const sentences = await sentenceService.selectSentences(room.settings.sentenceCount);
       room.sentences = sentences;
 
+      const countdownStartTime = Date.now();
+      
       Object.keys(room.players).forEach(pId => {
         resetPlayerToLobbyState(room.players[pId]);
+        room.players[pId].sentenceStartTime = countdownStartTime;
       });
 
       await roomManager.updateRoom(roomCode, room);
 
-      const countdownStartTime = Date.now();
       io.to(roomCode).emit('countdown_start', {
         sentences: sentences,
         startTime: countdownStartTime,
@@ -51,16 +53,12 @@ export function setupGameFlowHandlers(io, socket) {
             updatedRoom.status = 'PLAYING';
             updatedRoom.gameStartedAt = Date.now();
             
-            const gameStartTime = Date.now();
-            Object.keys(updatedRoom.players).forEach(pId => {
-              updatedRoom.players[pId].sentenceStartTime = gameStartTime;
-            });
             
             await roomManager.updateRoom(roomCode, updatedRoom);
 
             io.to(roomCode).emit('game_start', {
               firstSentence: sentences[0],
-              gameStartTime: gameStartTime
+              gameStartTime: Date.now()
             });
 
             console.log(`Game started: ${roomCode}`);
@@ -188,6 +186,14 @@ export function setupGameFlowHandlers(io, socket) {
       room.status = 'LOBBY';
       room.sentences = [];
       room.gameStartedAt = null;
+      room.spectators = [];
+      
+      delete room.winner;
+      delete room.winnerId;
+      delete room.winnerNickname;
+      delete room.finalStats;
+      delete room.gameEndReason;
+      delete room.gameEndedAt;
 
       Object.keys(room.players).forEach(pId => {
         resetPlayerToLobbyState(room.players[pId]);

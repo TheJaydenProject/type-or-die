@@ -1,29 +1,30 @@
 import js from '@eslint/js'
 import globals from 'globals'
-import reactHooks from 'eslint-plugin-react-hooks'
-import reactRefresh from 'eslint-plugin-react-refresh'
-import { defineConfig, globalIgnores } from 'eslint/config'
+import pluginVue from 'eslint-plugin-vue'
 
-export default defineConfig([
-  globalIgnores(['dist']),
+export default [
   {
-    files: ['**/*.{js,jsx}'],
-    extends: [
-      js.configs.recommended,
-      reactHooks.configs.flat.recommended,
-      reactRefresh.configs.vite,
-    ],
+    ignores: ['dist']
+  },
+  // Use standard JS rules
+  js.configs.recommended,
+  // Use Vue Essential rules
+  ...pluginVue.configs['flat/essential'],
+  
+  {
+    files: ['**/*.{js,mjs,cjs,vue}'],
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,
       parserOptions: {
         ecmaVersion: 'latest',
-        ecmaFeatures: { jsx: true },
-        sourceType: 'module',
-      },
+        sourceType: 'module'
+      }
     },
     rules: {
-      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
-    },
-  },
-])
+      // Add custom rules here if needed
+      'no-unused-vars': 'warn',
+      'vue/multi-word-component-names': 'off' // Optional: turns off the rule requiring multi-word component names
+    }
+  }
+]
