@@ -335,14 +335,23 @@ const onMainMenu = () => {
 }
 
 const onReplay = () => {
-  console.log('REPLAY REQUESTED')
-  socket.emit('request_replay', { roomCode: currentRoom.value.roomCode }, (response) => {
-    if (response.success) {
-      console.log('Replay request successful')
-    } else {
-      error.value = `ERROR: ${response.error.toUpperCase()}`
-    }
-  })
+  // Check if I am the host
+  if (currentRoom.value && currentRoom.value.hostId === playerId.value) {
+    console.log('HOST REPLAY REQUESTED')
+    socket.emit('request_replay', { roomCode: currentRoom.value.roomCode }, (response) => {
+      if (response.success) {
+        console.log('Replay request successful')
+      } else {
+        error.value = `ERROR: ${response.error.toUpperCase()}`
+      }
+    })
+  } else {
+    console.log('RETURNING TO LOBBY (LOCAL)')
+    gameEndData.value = null
+    sentences.value = []
+    view.value = 'LOBBY'
+    
+  }
 }
 </script>
 

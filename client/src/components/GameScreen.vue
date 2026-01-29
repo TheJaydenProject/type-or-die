@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import GameController from './game/GameController.js'
 import StatusHUD from './game/StatusHUD.vue'
 import TypingField from './game/TypingField.vue'
@@ -21,6 +21,8 @@ const currentSentenceIndex = ref(0)
 const currentWordIndex = ref(0)
 const currentCharInWord = ref(0)
 const remainingTime = ref(20)
+let gameLoopInterval = null
+
 const mistypeFlash = ref(false)
 const flashKey = ref(0)
 const isProcessingError = ref(false)
@@ -31,12 +33,9 @@ const rouletteResult = ref(null)
 const showVictory = ref(false)
 const showAbortConfirm = ref(false)
 
-
 const isHost = computed(() => props.room.hostId === props.playerId)
 
-let timerInterval = null
-let spectatorInterval = null
-
+// --- INITIALIZATION ---
 const initializePlayers = () => {
   const initialPlayers = {}
   Object.keys(props.room.players).forEach(pId => {
@@ -69,6 +68,7 @@ const initializePlayers = () => {
 
 initializePlayers()
 
+// --- COMPUTED HELPERS ---
 const currentPlayer = computed(() => players.value[props.playerId] || {})
 const status = computed(() => currentPlayer.value.status || 'ALIVE')
 
@@ -77,15 +77,18 @@ const spectatorTarget = computed(() => {
   return players.value[spectatingPlayerId.value] || null
 })
 
-const spectatorDisplayTime = computed(() => {
-  if (!spectatorTarget.value) return 20
-  return spectatorTarget.value.calculatedTime ?? 20
+const displayTarget = computed(() => {
+  if (props.isSpectator) {
+    return spectatingPlayerId.value ? players.value[spectatingPlayerId.value] : null
+  }
+  return players.value[props.playerId]
 })
 
 const currentSentence = computed(() => props.sentences[currentSentenceIndex.value] || '')
 const words = computed(() => currentSentence.value.split(' '))
 const currentWord = computed(() => words.value[currentWordIndex.value] || '')
 
+// --- GAME ACTIONS ---
 const handleResetGame = () => {
   showAbortConfirm.value = true
 }
@@ -103,57 +106,48 @@ const cancelAbort = () => {
   showAbortConfirm.value = false
 }
 
-const startMainTimer = () => {
-  if (timerInterval) clearInterval(timerInterval)
-  timerInterval = setInterval(() => {
-    const prev = remainingTime.value
-    const newTime = Math.max(0, prev - 0.1)
-    remainingTime.value = newTime
-    
-    if (newTime <= 0 && prev > 0) {
-      props.socket.emit('sentence_timeout', {
-        roomCode: props.room.roomCode,
-        sentenceIndex: currentSentenceIndex.value
-      })
-    }
-  }, 100)
-}
-
-const startSpectatorTimer = () => {
-  if (spectatorInterval) clearInterval(spectatorInterval)
-  spectatorInterval = setInterval(() => {
-    if (!spectatorTarget.value || !spectatorTarget.value.sentenceStartTime) return
-    
-    const elapsed = (Date.now() - spectatorTarget.value.sentenceStartTime) / 1000
-    const calculated = Math.max(0, 20 - elapsed)
-    
-    if (players.value[spectatingPlayerId.value]) {
-      players.value[spectatingPlayerId.value].calculatedTime = calculated
-    }
-  }, 100)
-}
-
-watch([status, currentSentenceIndex, () => props.isSpectator], () => {
-  if (props.isSpectator) {
-    if (timerInterval) clearInterval(timerInterval)
-    return
-  }
+// --- UNIFIED GAME LOOP ---
+const startGameLoop = () => {
+  if (gameLoopInterval) clearInterval(gameLoopInterval)
   
-  if (status.value === 'ALIVE') {
-    startMainTimer()
-  } else {
-    if (timerInterval) clearInterval(timerInterval)
-  }
-}, { immediate: true })
+  gameLoopInterval = setInterval(() => {
+    const target = displayTarget.value
 
-watch([() => props.isSpectator, spectatingPlayerId], () => {
-  if (props.isSpectator && spectatingPlayerId.value) {
-    startSpectatorTimer()
-  } else {
-    if (spectatorInterval) clearInterval(spectatorInterval)
-  }
-})
+    if (!target || target.status === 'DEAD') {
+      remainingTime.value = 0
+      return
+    }
 
+    // Freeze visually during animation
+    if (showRoulette.value) {
+      remainingTime.value = 20
+      return
+    }
+
+    const startTime = new Date(target.sentenceStartTime).getTime()
+    if (!startTime || isNaN(startTime)) {
+      remainingTime.value = 20
+      return
+    }
+
+    const elapsed = (Date.now() - startTime) / 1000
+    // Math.min(20, ...) is vital because startTime might be in the future (server buffer)
+    const calculatedTime = Math.min(20, Math.max(0, 20 - elapsed))
+
+    remainingTime.value = calculatedTime
+
+    if (!props.isSpectator && target.id === props.playerId) {
+      if (calculatedTime <= 0) {
+        props.socket.emit('sentence_timeout', {
+          roomCode: props.room.roomCode,
+          sentenceIndex: currentSentenceIndex.value
+        })
+      }
+    }
+  }, 100)
+}
+
+// --- INPUT HANDLING ---
 const handleKeyPress = (e) => {
   if (status.value !== 'ALIVE' || isProcessingError.value || props.isSpectator || isRouletteActive.value) return
 
@@ -224,6 +218,7 @@ const triggerMistype = (typed, expected, charIndex) => {
   currentCharInWord.value = 0
 }
 
+// --- SOCKET HANDLERS ---
 const onPlayerProgress = (data) => {
   if (players.value[data.playerId]) {
     players.value[data.playerId] = {
@@ -254,12 +249,9 @@ const onPlayerStrike = (data) => {
       currentCharIndex: data.currentCharIndex
     }
     
-    // Logic specific to the current user (Visuals & Timer Reset)
     if (data.playerId === props.playerId) {
-      remainingTime.value = 20
       mistypeFlash.value = true
       flashKey.value += 1
-      
       setTimeout(() => {
         mistypeFlash.value = false
         isProcessingError.value = false
@@ -269,26 +261,30 @@ const onPlayerStrike = (data) => {
 }
 
 const onRouletteResult = (data) => {
-  if (data.playerId === props.playerId) {
+  const isTarget = data.playerId === props.playerId || 
+                   (props.isSpectator && data.playerId === spectatingPlayerId.value)
+
+  if (isTarget) {
     rouletteResult.value = data
     showRoulette.value = true
-    isRouletteActive.value = true
     
-    remainingTime.value = 20
-    if (players.value[props.playerId]) {
-      players.value[props.playerId].mistakeStrikes = 0
+    // Update local start time immediately so timer syncs correctly when animation ends
+    if (data.sentenceStartTime && players.value[data.playerId]) {
+      players.value[data.playerId].sentenceStartTime = data.sentenceStartTime
     }
     
-    if (timerInterval) clearInterval(timerInterval)
+    // Only block INPUT if it is actually US playing
+    if (data.playerId === props.playerId) {
+      isRouletteActive.value = true
+      if (players.value[props.playerId]) {
+        players.value[props.playerId].mistakeStrikes = 0
+      }
+    }
     
     setTimeout(() => {
       showRoulette.value = false
       rouletteResult.value = null
       isRouletteActive.value = false
-      
-      if (players.value[props.playerId]?.status === 'ALIVE') {
-        startMainTimer()
-      }
     }, 5000)
   }
 }
@@ -313,10 +309,6 @@ const onSentenceCompleted = (data) => {
     p.currentCharIndex = 0
     
     players.value[data.playerId] = { ...p }
-    
-    if (data.playerId === props.playerId) {
-      remainingTime.value = 20
-    }
   }
 }
 
@@ -333,27 +325,25 @@ const onGameEnded = (data) => {
   }
 }
 
-// --- 2. MOUNT & UNMOUNT ---
-
+// --- MOUNT & UNMOUNT ---
 onMounted(() => {
   document.addEventListener('keydown', handleKeyPress)
 
-  // Attach the named functions
   props.socket.on('player_progress', onPlayerProgress)
   props.socket.on('player_strike', onPlayerStrike)
   props.socket.on('roulette_result', onRouletteResult)
   props.socket.on('player_died', onPlayerDied)
   props.socket.on('sentence_completed', onSentenceCompleted)
   props.socket.on('game_ended', onGameEnded)
+
+  startGameLoop()
 })
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeyPress)
-  if (timerInterval) clearInterval(timerInterval)
-  if (spectatorInterval) clearInterval(spectatorInterval)
   
-  // Detach ONLY these specific functions
-  // This prevents wiping the global game_ended listener in App.vue
+  if (gameLoopInterval) clearInterval(gameLoopInterval)
+  
   props.socket.off('player_progress', onPlayerProgress)
   props.socket.off('player_strike', onPlayerStrike)
   props.socket.off('roulette_result', onRouletteResult)
@@ -425,9 +415,9 @@ const onLeaveClick = () => {
         </div>
 
         <StatusHUD
-          :remainingTime="isSpectator && spectatorTarget ? spectatorDisplayTime : remainingTime"
-          :mistakeStrikes="isSpectator && spectatorTarget ? (spectatorTarget.mistakeStrikes || 0) : (currentPlayer.mistakeStrikes || 0)"
-          :currentSentenceIndex="isSpectator && spectatorTarget ? (spectatorTarget.currentSentenceIndex || 0) : currentSentenceIndex"
+          :remainingTime="remainingTime" 
+          :mistakeStrikes="displayTarget?.mistakeStrikes || 0"
+          :currentSentenceIndex="displayTarget?.currentSentenceIndex || 0"
           :totalSentences="sentences.length"
           :mistypeFlash="mistypeFlash"
         />

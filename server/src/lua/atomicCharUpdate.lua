@@ -27,21 +27,40 @@ for word in sentence:gmatch("%S+") do
   table.insert(words, word)
 end
 
--- Get target character
+-- Get current word
 local current_word = words[player.currentWordIndex + 1]
 if not current_word then return nil end
 
-local target_char = current_word:sub(player.currentCharInWord + 1, player.currentCharInWord + 1)
+local word_len = #current_word
+local is_last_word = (player.currentWordIndex >= #words - 1)
+local target_char = ""
+
+-- LOGIC CHANGE: Handle Space Character
+if player.currentCharInWord >= word_len then
+    if not is_last_word then
+        target_char = " "
+    else
+        -- Should not happen if logic is correct, but fail-safe
+        return nil 
+    end
+else
+    target_char = current_word:sub(player.currentCharInWord + 1, player.currentCharInWord + 1)
+end
 
 -- Validate character
 if char ~= target_char then return nil end
 
 -- Update player state
-player.currentCharInWord = player.currentCharInWord + 1
+-- If it was a space (implied by currentCharInWord >= word_len), we don't increment counters for the word
+if char ~= " " then
+    player.currentCharInWord = player.currentCharInWord + 1
+    player.totalCorrectChars = player.totalCorrectChars + 1
+    player.sentenceCharCount = (player.sentenceCharCount or 0) + 1
+end
+
+-- Common updates
 player.currentCharIndex = player.currentCharIndex + 1
 player.totalTypedChars = player.totalTypedChars + 1
-player.totalCorrectChars = player.totalCorrectChars + 1
-player.sentenceCharCount = (player.sentenceCharCount or 0) + 1
 
 -- Calculate WPM
 if room.gameStartedAt then
@@ -59,10 +78,10 @@ end
 local result_type = 'CORRECT'
 local extra_data = {}
 
--- Check word completion
-if player.currentCharInWord >= #current_word then
-  if player.currentWordIndex >= #words - 1 then
-    -- Sentence complete
+-- Check word completion / Advancement
+if player.currentCharInWord >= word_len then
+  if is_last_word then
+    -- SENTENCE COMPLETE (Last word finished)
     result_type = 'SENTENCE_COMPLETE'
     player.completedSentences = player.completedSentences + 1
     player.currentSentenceIndex = player.currentSentenceIndex + 1
@@ -81,7 +100,8 @@ if player.currentCharInWord >= #current_word then
       wpm = player.currentSessionWPM,
       timeUsed = extra_data.timeUsed
     })
-  else
+  elseif char == " " then
+    -- SPACE TYPED: Advance to next word
     player.currentWordIndex = player.currentWordIndex + 1
     player.currentCharInWord = 0
   end

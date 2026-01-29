@@ -191,10 +191,54 @@ export function setupGameFlowHandlers(io, socket) {
         playerEventQueues.delete(pId);
       });
 
+      try {
+        // Fetch all sockets currently connected to this room
+        const roomSockets = await io.in(roomCode).fetchSockets();
+        
+        for (const sock of roomSockets) {
+          const sockPlayerId = sock.data?.playerId || sock.playerId;
+          
+          // If this socket's player ID is NOT in the players list, they were a pure spectator
+          if (sockPlayerId && !room.players[sockPlayerId]) {
+            const nickname = sock.data?.nickname || sock.nickname || 'OPERATOR';
+            
+            // Add them as a fresh player
+            room.players[sockPlayerId] = {
+              id: sockPlayerId,
+              nickname: nickname,
+              isGuest: true,
+              socketId: sock.id,
+              ipAddress: sock.handshake.address,
+              status: 'ALIVE',
+              currentSentenceIndex: 0,
+              rouletteOdds: 6,
+              mistakeStrikes: 0,
+              completedSentences: 0,
+              totalCorrectChars: 0,
+              totalTypedChars: 0,
+              totalMistypes: 0,
+              currentCharIndex: 0,
+              currentWordIndex: 0,
+              currentCharInWord: 0,
+              sentenceStartTime: null,
+              remainingTime: 20,
+              rouletteHistory: [],
+              sentenceHistory: [],
+              averageWPM: 0,
+              peakWPM: 0,
+              currentSessionWPM: 0
+            };
+            console.log(`Replay: Promoted spectator ${nickname} (${sockPlayerId}) to player`);
+          }
+        }
+      } catch (err) {
+        console.error(`Spectator promotion failed in ${roomCode}:`, err.message);
+      }
+
       room.status = 'LOBBY';
       room.sentences = [];
       room.gameStartedAt = null;
-      room.spectators = [];
+      room.spectators = []; // Clear spectator list as they are now players
       
       delete room.winner;
       delete room.winnerId;

@@ -164,14 +164,20 @@ async function processMistypeEvent(io, socket, data) {
     if (survived) {
       player.rouletteOdds = Math.max(2, odds - 1);
       
+      // === FIX START: Set start time to future to account for 5s animation ===
+      const futureStartTime = Date.now() + 5000;
+      player.sentenceStartTime = futureStartTime;
+      
       io.to(roomCode).emit('roulette_result', {
         playerId: playerId,
         survived: true,
         newOdds: player.rouletteOdds,
         roll: roll,
         previousOdds: odds,
-        sentenceStartTime: resetStartTime
+        sentenceStartTime: futureStartTime // Broadcast the future time
       });
+      // === FIX END ===
+
     } else {
       player.status = 'DEAD';
       if (!Array.isArray(player.sentenceHistory)) player.sentenceHistory = [];
@@ -229,8 +235,10 @@ async function processTimeoutEvent(io, socket, data) {
   if (survived) {
     player.rouletteOdds = Math.max(2, odds - 1);
     player.currentCharIndex = 0;
-    const timeoutResetTime = Date.now();
-    player.sentenceStartTime = timeoutResetTime;
+    
+    // === FIX START: Set start time to future for timeout survival too ===
+    const futureStartTime = Date.now() + 5000;
+    player.sentenceStartTime = futureStartTime;
 
     io.to(roomCode).emit('roulette_result', {
       playerId: playerId,
@@ -238,8 +246,9 @@ async function processTimeoutEvent(io, socket, data) {
       newOdds: player.rouletteOdds,
       roll: roll,
       previousOdds: odds,
-      sentenceStartTime: timeoutResetTime
+      sentenceStartTime: futureStartTime
     });
+    // === FIX END ===
     
     await roomManager.updateRoom(roomCode, room);
   } else {
