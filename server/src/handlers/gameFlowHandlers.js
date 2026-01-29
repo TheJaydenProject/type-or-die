@@ -94,50 +94,57 @@ export function setupGameFlowHandlers(io, socket) {
       
       cleanupRoomTimer(roomCode);
 
-      const spectatorSocketMap = new Map();
-      const roomSockets = await io.in(roomCode).fetchSockets();
-      
-      for (const sock of roomSockets) {
-        const sockPlayerId = sock.playerId || sock.data?.playerId;
-        if (sockPlayerId && room.spectators?.includes(sockPlayerId)) {
-          spectatorSocketMap.set(sockPlayerId, sock);
+      try {
+        const spectatorSocketMap = new Map();
+        const roomSockets = await io.in(roomCode).fetchSockets();
+        
+        for (const sock of roomSockets) {
+          const sockPlayerId = sock.data?.playerId || sock.playerId;
+          if (sockPlayerId) {
+            spectatorSocketMap.set(sockPlayerId, sock);
+          }
         }
-      }
 
-      if (room.spectators && room.spectators.length > 0) {
-        for (const spectatorId of room.spectators) {
-          if (!room.players[spectatorId]) {
-            const spectatorSocket = spectatorSocketMap.get(spectatorId);
-            if (spectatorSocket) {
-              const nickname = spectatorSocket.nickname || spectatorSocket.data?.nickname || 'SPECTATOR';
-              room.players[spectatorId] = {
-                id: spectatorId,
-                nickname: nickname,
-                isGuest: true,
-                socketId: spectatorSocket.id,
-                ipAddress: spectatorSocket.handshake.address,
-                status: 'ALIVE',
-                currentSentenceIndex: 0,
-                rouletteOdds: 6,
-                mistakeStrikes: 0,
-                completedSentences: 0,
-                totalCorrectChars: 0,
-                totalTypedChars: 0,
-                totalMistypes: 0,
-                currentCharIndex: 0,
-                currentWordIndex: 0,
-                currentCharInWord: 0,
-                sentenceStartTime: null,
-                remainingTime: CONSTANTS.GAME_DURATION_TIMEOUT,
-                rouletteHistory: [],
-                sentenceHistory: [],
-                averageWPM: 0,
-                peakWPM: 0,
-                currentSessionWPM: 0
-              };
+        if (room.spectators && room.spectators.length > 0) {
+          for (const spectatorId of room.spectators) {
+            if (!room.players[spectatorId]) {
+              const spectatorSocket = spectatorSocketMap.get(spectatorId);
+              
+              if (spectatorSocket) {
+                const nickname = spectatorSocket.data?.nickname || spectatorSocket.nickname || 'SPECTATOR';
+                
+                room.players[spectatorId] = {
+                  id: spectatorId,
+                  nickname: nickname,
+                  isGuest: true,
+                  socketId: spectatorSocket.id,
+                  ipAddress: spectatorSocket.handshake.address,
+                  status: 'ALIVE',
+                  currentSentenceIndex: 0,
+                  rouletteOdds: 6,
+                  mistakeStrikes: 0,
+                  completedSentences: 0,
+                  totalCorrectChars: 0,
+                  totalTypedChars: 0,
+                  totalMistypes: 0,
+                  currentCharIndex: 0,
+                  currentWordIndex: 0,
+                  currentCharInWord: 0,
+                  sentenceStartTime: null,
+                  remainingTime: CONSTANTS.GAME_DURATION_TIMEOUT,
+                  rouletteHistory: [],
+                  sentenceHistory: [],
+                  averageWPM: 0,
+                  peakWPM: 0,
+                  currentSessionWPM: 0
+                };
+                console.log(`Recovered spectator ${nickname} (${spectatorId})`);
+              }
             }
           }
         }
+      } catch (recoveryError) {
+        console.error(`Spectator recovery failed in ${roomCode}:`, recoveryError.message);
       }
 
       room.status = 'LOBBY';
@@ -153,6 +160,7 @@ export function setupGameFlowHandlers(io, socket) {
 
       io.to(roomCode).emit('game_force_reset', { room: room });
       console.log(`Room ${roomCode} reset to lobby`);
+      
       callback({ success: true });
 
     } catch (error) {

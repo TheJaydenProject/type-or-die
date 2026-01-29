@@ -487,7 +487,7 @@ const onReplay = () => {
 
     <div v-else-if="view === 'COUNTDOWN'" class="container countdown-container">
       <div class="countdown-number">
-        {{ countdown > 0 ? countdown : 'GO!' }}
+        {{ countdown }}
       </div>
       <p class="countdown-text">
         {{ countdown > 0 ? 'GET READY TO TYPE...' : 'START TYPING NOW!' }}

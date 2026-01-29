@@ -91,8 +91,12 @@ const handleResetGame = () => {
 }
 
 const confirmAbort = () => {
-  props.socket.emit('reset_game', { roomCode: props.room.roomCode })
-  showAbortConfirm.value = false
+  props.socket.emit('force_reset_game', { roomCode: props.room.roomCode }, (response) => {
+    if (!response?.success) {
+      console.error('Failed to abort game:', response?.error);
+    }
+  });
+  showAbortConfirm.value = false;
 }
 
 const cancelAbort = () => {

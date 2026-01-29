@@ -33,6 +33,8 @@ export function setupConnectionHandlers(io, socket) {
       }
 
       socket.playerId = playerId;
+      socket.data.playerId = playerId;
+      socket.data.nickname = room.players[playerId]?.nickname || 'OPERATOR'; 
       socket.roomCode = roomCode;
       socket.join(roomCode);
 
