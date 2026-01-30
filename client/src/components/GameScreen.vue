@@ -89,9 +89,19 @@ const displayTarget = computed(() => {
   return players.value[props.playerId]
 })
 
-const currentSentence = computed(() => props.sentences[currentSentenceIndex.value] || '')
-const words = computed(() => currentSentence.value.split(' '))
-const currentWord = computed(() => words.value[currentWordIndex.value] || '')
+const currentSentence = computed(() => {
+  const raw = props.sentences[currentSentenceIndex.value] || []
+  return Array.isArray(raw) ? raw.join(' ') : raw
+})
+
+const words = computed(() => {
+  const raw = props.sentences[currentSentenceIndex.value] || []
+  return Array.isArray(raw) ? raw : []
+})
+
+const currentWord = computed(() => {
+  return words.value[currentWordIndex.value] || ''
+})
 
 // --- GAME ACTIONS ---
 const handleResetGame = () => {
@@ -125,7 +135,6 @@ const startGameLoop = () => {
 
     // Freeze visually during animation
     if (showRoulette.value) {
-      remainingTime.value = 20
       return
     }
 
@@ -136,8 +145,8 @@ const startGameLoop = () => {
     }
 
     const elapsed = (Date.now() - startTime) / 1000
-    // Math.min(20, ...) is vital because startTime might be in the future (server buffer)
-    const calculatedTime = Math.min(20, Math.max(0, 20 - elapsed))
+    // Handle future timestamps from post-roulette buffer
+    const calculatedTime = elapsed < 0 ? 20 : Math.min(20, Math.max(0, 20 - elapsed))
 
     remainingTime.value = calculatedTime
 
@@ -205,16 +214,6 @@ const handleKeyPress = (e) => {
       timestamp: Date.now()
     })
 
-    if (GameController.shouldCompleteSentence(currentWordIndex.value, _words, newCharInWord, _currentWord)) {
-      setTimeout(() => {
-        const nextIndex = currentSentenceIndex.value + 1
-        if (nextIndex < props.sentences.length) {
-          currentSentenceIndex.value = nextIndex
-          currentWordIndex.value = 0
-          currentCharInWord.value = 0
-        }
-      }, 100)
-    }
   } else {
     triggerMistype(key, expectedChar, charIndex)
   }
@@ -236,19 +235,43 @@ const triggerMistype = (typed, expected, charIndex) => {
 // --- SOCKET HANDLERS ---
 const onPlayerProgress = (data) => {
   if (players.value[data.playerId]) {
+    const currentP = players.value[data.playerId]
+
     players.value[data.playerId] = {
-      ...players.value[data.playerId],
-      currentCharIndex: data.charIndex,
-      currentSentenceIndex: data.sentenceIndex,
-      currentWordIndex: data.currentWordIndex || 0,
-      currentCharInWord: data.currentCharInWord || 0,
-      completedSentences: data.completedSentences,
-      totalCorrectChars: data.totalCorrectChars,
-      totalTypedChars: data.totalTypedChars,
-      totalMistypes: data.totalMistypes,
-      averageWPM: data.wpm,
-      status: data.status,
-      sentenceStartTime: data.sentenceStartTime
+      ...currentP,
+      currentCharIndex: data.currentCharIndex ?? currentP.currentCharIndex,
+      currentSentenceIndex: data.currentSentenceIndex ?? currentP.currentSentenceIndex,
+      currentWordIndex: data.currentWordIndex ?? currentP.currentWordIndex,
+      currentCharInWord: data.currentCharInWord ?? currentP.currentCharInWord,
+      completedSentences: data.completedSentences ?? currentP.completedSentences,
+      totalCorrectChars: data.totalCorrectChars ?? currentP.totalCorrectChars,
+      totalTypedChars: data.totalTypedChars ?? currentP.totalTypedChars,
+      totalMistypes: data.totalMistypes ?? currentP.totalMistypes,
+      averageWPM: data.averageWPM ?? currentP.averageWPM,
+      status: data.status ?? currentP.status,
+      sentenceStartTime: data.sentenceStartTime ?? currentP.sentenceStartTime
+    }
+  }
+
+  // 2. Force-Sync Local State (Anti-Softlock)
+  if (data.playerId === props.playerId && !props.isSpectator) {
+    
+    // Safety check: Don't sync if server sent garbage
+    if (typeof data.currentSentenceIndex === 'undefined') return;
+
+    const isDesynced = 
+      currentSentenceIndex.value !== data.currentSentenceIndex ||
+      currentWordIndex.value !== (data.currentWordIndex || 0) ||
+      Math.abs(currentCharInWord.value - (data.currentCharInWord || 0)) > 1;
+
+    if (isDesynced) {
+      console.log('Desync detected - Rubber banding to server state');
+      
+      currentSentenceIndex.value = data.currentSentenceIndex;
+      currentWordIndex.value = data.currentWordIndex || 0;
+      currentCharInWord.value = data.currentCharInWord || 0;
+      
+      isProcessingError.value = false; 
     }
   }
 }
@@ -290,28 +313,33 @@ const syncRouletteUI = () => {
 }
 
 const onRouletteResult = (data) => {
-  // 1. Store the data on the specific player (Persistence)
   if (players.value[data.playerId]) {
+    
+    players.value[data.playerId] = {
+      ...players.value[data.playerId],
+      rouletteOdds: data.newOdds,
+      mistakeStrikes: 0 
+    };
+
+    const fallbackOdds = data.survived ? data.newOdds + 1 : data.newOdds;
+
     players.value[data.playerId].activeRoulette = {
       ...data,
-      expiresAt: Date.now() + 5000 // Valid for 5 seconds
+      previousOdds: data.previousOdds || fallbackOdds,
+      expiresAt: Date.now() + 5000
     }
     
-    // Update local start time immediately (Timer Sync)
-    if (data.sentenceStartTime) {
-      players.value[data.playerId].sentenceStartTime = data.sentenceStartTime
+    if (data.survived) {
+      players.value[data.playerId].sentenceStartTime = Date.now() + 5000;
     }
 
-    // Auto-clear the state after 5 seconds
+    // Auto-clear the animation state after 5 seconds
     setTimeout(() => {
       if (players.value[data.playerId]) {
         players.value[data.playerId].activeRoulette = null
       }
       if (displayTarget.value?.id === data.playerId) {
         syncRouletteUI()
-        
-        if (!props.isSpectator && data.playerId === props.playerId && players.value[props.playerId]?.status === 'ALIVE') {
-        }
       }
     }, 5000)
   }
@@ -456,10 +484,10 @@ const onLeaveClick = () => {
 
         <TypingField
           :key="`typing-${isSpectator && spectatorTarget ? spectatingPlayerId : playerId}-${isSpectator && spectatorTarget ? (spectatorTarget.currentSentenceIndex || 0) : currentSentenceIndex}`"
-          :sentences="sentences"
-          :currentSentenceIndex="isSpectator && spectatorTarget ? (spectatorTarget.currentSentenceIndex || 0) : currentSentenceIndex"
-          :currentWordIndex="isSpectator && spectatorTarget ? (spectatorTarget.currentWordIndex || 0) : currentWordIndex"
-          :currentCharInWord="isSpectator && spectatorTarget ? (spectatorTarget.currentCharInWord || 0) : currentCharInWord"
+            :sentences="sentences.map(s => Array.isArray(s) ? s.join(' ') : s)"
+            :currentSentenceIndex="isSpectator && spectatorTarget ? (spectatorTarget.currentSentenceIndex || 0) : currentSentenceIndex"
+            :currentWordIndex="isSpectator && spectatorTarget ? (spectatorTarget.currentWordIndex || 0) : currentWordIndex"
+            :currentCharInWord="isSpectator && spectatorTarget ? (spectatorTarget.currentCharInWord || 0) : currentCharInWord"
         />
       </div>
 

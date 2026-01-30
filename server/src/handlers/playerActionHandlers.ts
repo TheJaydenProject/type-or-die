@@ -130,7 +130,8 @@ async function processMistypeEvent(
   io.to(roomCode).emit('player_strike', {
     playerId: playerId,
     strikes: player.mistakeStrikes,
-    maxStrikes: 3
+    maxStrikes: 3,
+    sentenceStartTime: resetStartTime
   });
 
   if (player.mistakeStrikes >= 3) {
@@ -158,7 +159,14 @@ async function processMistypeEvent(
         playerId: playerId,
         survived: true,
         newOdds: player.rouletteOdds,
+        previousOdds: odds,
         roll: roll
+      });
+
+      io.to(roomCode).emit('player_progress', {
+        playerId: playerId,
+        rouletteOdds: player.rouletteOdds,
+        mistakeStrikes: 0
       });
 
     } else {
@@ -176,6 +184,7 @@ async function processMistypeEvent(
         playerId: playerId,
         survived: false,
         newOdds: odds,
+        previousOdds: odds,
         roll: roll
       });
 
@@ -236,7 +245,14 @@ async function processTimeoutEvent(
       playerId: playerId,
       survived: true,
       newOdds: player.rouletteOdds,
+      previousOdds: odds,
       roll: roll
+    });
+
+    io.to(roomCode).emit('player_progress', {
+      playerId: playerId,
+      rouletteOdds: player.rouletteOdds,
+      currentCharIndex: 0
     });
     
     await roomManager.updateRoom(roomCode, room);

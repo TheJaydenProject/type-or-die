@@ -138,7 +138,7 @@ onMounted(() => {
   })
 
   socket.on('sync_sentences', (data) => {
-    console.log(`Syncing ${data.sentences.length} sentences for spectator`)
+    console.log(`Syncing ${data.sentences.length} word-arrays for spectator`)
     sentences.value = data.sentences
   })
 
@@ -179,6 +179,10 @@ watch(connected, (isConnected) => {
                            player?.status === 'DEAD'
         
         userRole.value = isSpectator ? 'SPECTATOR' : 'PLAYER'
+
+        if (response.room.sentences && response.room.sentences.length > 0) {
+          sentences.value = response.room.sentences
+        }
         
         if (response.room.status === 'PLAYING' || response.room.status === 'COUNTDOWN') {
           view.value = 'GAME'

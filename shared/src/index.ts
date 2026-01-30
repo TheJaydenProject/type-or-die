@@ -99,8 +99,16 @@ export interface SocketData {
 export interface ServerToClientEvents {
   // Game Flow
   sync_game_state: (data: RoomState) => void;
-  countdown_start: (data: { sentences: string[]; startTime: number; duration: number }) => void;
-  game_start: (data: { firstSentence: string; gameStartTime: number }) => void;
+  countdown_start: (data: { 
+    sentences: string[][];
+    startTime: number; 
+    duration: number; 
+  }) => void;
+  game_start: (data: { 
+    firstSentence: string[];
+    gameStartTime: number; 
+  }) => void;
+  sync_sentences: (data: { sentences: string[][] }) => void;
   game_ended: (data: { reason: GameEndReason; winnerId: string | null; finalStats: Record<string, PlayerState> }) => void;
   
   // Game Flow Control

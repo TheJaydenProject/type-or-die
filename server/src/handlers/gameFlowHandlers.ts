@@ -38,8 +38,10 @@ export function setupGameFlowHandlers(io: TypedServer, socket: TypedSocket) {
 
       room.status = 'COUNTDOWN';
       
-      const sentences = await sentenceService.selectSentences(room.settings.sentenceCount);
-      room.sentences = sentences;
+      const rawSentences = await sentenceService.selectSentences(room.settings.sentenceCount);
+      const splitSentences = rawSentences.map(s => s.split(' '));
+
+      room.sentences = splitSentences as any;
 
       const countdownStartTime = Date.now();
       
@@ -51,7 +53,7 @@ export function setupGameFlowHandlers(io: TypedServer, socket: TypedSocket) {
       await roomManager.updateRoom(roomCode, room);
 
       io.to(roomCode).emit('countdown_start', {
-        sentences: sentences,
+        sentences: splitSentences,
         startTime: countdownStartTime,
         duration: CONSTANTS.COUNTDOWN_DURATION
       });
@@ -68,7 +70,7 @@ export function setupGameFlowHandlers(io: TypedServer, socket: TypedSocket) {
             await roomManager.updateRoom(roomCode, updatedRoom);
 
             io.to(roomCode).emit('game_start', {
-              firstSentence: sentences[0],
+              firstSentence: splitSentences[0],
               gameStartTime: Date.now()
             });
 

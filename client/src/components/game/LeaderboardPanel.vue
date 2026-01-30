@@ -13,11 +13,21 @@ const props = defineProps<{
 // Sort players based on status (Alive first), completion, then accuracy
 const sortedPlayers = computed(() => {
   return Object.values(props.players).sort((a, b) => {
+    // 1. Status (Alive first)
     if (a.status === 'ALIVE' && b.status !== 'ALIVE') return -1
     if (a.status !== 'ALIVE' && b.status === 'ALIVE') return 1
+    
+    // 2. Sentence Completion
     if (b.completedSentences !== a.completedSentences) {
       return b.completedSentences - a.completedSentences
     }
+
+    // 3. Roulette Odds
+    if (a.rouletteOdds !== b.rouletteOdds) {
+       return a.rouletteOdds - b.rouletteOdds 
+    }
+    
+    // 4. Total Correct Characters
     return b.totalCorrectChars - a.totalCorrectChars
   })
 })
