@@ -8,12 +8,13 @@ const __dirname = path.dirname(__filename);
 const SCRIPTS_DIR = path.join(__dirname, '..', 'lua');
 
 class LuaScriptLoader {
+  private scripts = new Map<string, string>();
+
   constructor() {
-    this.scripts = new Map();
     this.loadAllScripts();
   }
 
-  loadAllScripts() {
+  private loadAllScripts(): void {
     const scriptFiles = [
       'atomicCharUpdate.lua',
       'registerRoomCreation.lua',
@@ -28,14 +29,14 @@ class LuaScriptLoader {
         const name = filename.replace('.lua', '');
         this.scripts.set(name, content);
         console.log(`Loaded Lua script: ${name}`);
-      } catch (error) {
+      } catch (error: any) {
         console.error(`Failed to load Lua script ${filename}:`, error.message);
         throw error;
       }
     }
   }
 
-  getScript(name) {
+  public getScript(name: string): string {
     const script = this.scripts.get(name);
     if (!script) {
       throw new Error(`Lua script not found: ${name}`);

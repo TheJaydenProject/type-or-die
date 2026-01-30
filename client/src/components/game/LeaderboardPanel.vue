@@ -1,14 +1,14 @@
-<script setup>
+<script setup lang="ts">
 import { computed } from 'vue'
+import { PlayerState } from '@typeordie/shared'
 
-const props = defineProps({
-  players: { type: Object, required: true },
-  playerId: { type: String, required: true },
-  totalSentences: { type: Number, default: 1 },
-  // Keeping as a Prop function to match the logic in GameScreen
-  onPlayerClick: { type: Function, default: null }, 
-  highlightedPlayerId: String
-})
+const props = defineProps<{
+  players: Record<string, PlayerState>
+  playerId: string
+  totalSentences: number
+  highlightedPlayerId?: string // Optional prop
+  onPlayerClick?: (id: string) => void // Typed function prop
+}>()
 
 // Sort players based on status (Alive first), completion, then accuracy
 const sortedPlayers = computed(() => {
@@ -22,18 +22,21 @@ const sortedPlayers = computed(() => {
   })
 })
 
-const currentPlayer = computed(() => props.players[props.playerId] || {})
+// Current player lookup with a safer cast or partial check
+const currentPlayer = computed(() => props.players[props.playerId])
 
 // Calculate accuracy for the stats panel
 const accuracy = computed(() => {
   const p = currentPlayer.value
+  if (!p) return '100.0' // Default if player not found yet
+  
   return p.totalTypedChars > 0 
     ? ((p.totalCorrectChars / p.totalTypedChars) * 100).toFixed(1) 
-    : 100
+    : '100.0'
 })
 
-// Handle click logic safely
-const handleEntryClick = (player) => {
+// Handle click logic with proper parameter typing
+const handleEntryClick = (player: PlayerState) => {
   if (props.onPlayerClick && player.status === 'ALIVE') {
     props.onPlayerClick(player.id)
   }

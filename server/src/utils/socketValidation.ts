@@ -1,4 +1,13 @@
-export function validateInput(type, data) {
+export const CONSTANTS = {
+  COUNTDOWN_DURATION: 3000,
+  DISCONNECT_GRACE_PERIOD: 30000,
+  GAME_DURATION_TIMEOUT: 20000,
+  MAX_NICKNAME_LENGTH: 20
+} as const;
+
+type ValidationType = 'roomCode' | 'playerId' | 'nickname' | 'sentenceIndex' | 'charIndex';
+
+export function validateInput(type: ValidationType, data: any): void {
   if (!data || typeof data !== 'object') {
     throw new Error('Invalid data format');
   }
@@ -31,10 +40,3 @@ export function validateInput(type, data) {
       break;
   }
 }
-
-export const CONSTANTS = {
-  COUNTDOWN_DURATION: 3000,
-  DISCONNECT_GRACE_PERIOD: 30000,
-  GAME_DURATION_TIMEOUT: 20000,
-  MAX_NICKNAME_LENGTH: 20
-};

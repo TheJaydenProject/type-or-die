@@ -1,12 +1,22 @@
 import db from '../config/database.js';
 
+interface SentenceValidationResult {
+  valid: boolean;
+  errors: string[];
+  wordCount: number;
+  charCount: number;
+}
+
 class SentenceService {
+  private CACHE_PREFIX: string;
+  private CACHE_TTL: number;
+
   constructor() {
     this.CACHE_PREFIX = 'sentences:pool:';
     this.CACHE_TTL = 3600;
   }
 
-  async selectSentences(count) {
+  async selectSentences(count: number): Promise<string[]> {
     // TABLESAMPLE BERNOULLI is efficient for large tables but imprecise for small ones
     const query = `
       SELECT text
@@ -45,12 +55,12 @@ class SentenceService {
           );
         }
         
-        const sentences = fallbackResult.rows.map(row => row.text);
+        const sentences = fallbackResult.rows.map((row: any) => row.text);
         console.log(`Used fallback query for ${sentences.length} sentences`);
         return sentences;
       }
 
-      const sentences = result.rows.map(row => row.text);
+      const sentences = result.rows.map((row: any) => row.text);
 
       console.log(`Selected ${sentences.length} random sentences`);
       // Debug logging for sample verification
@@ -60,14 +70,14 @@ class SentenceService {
       
       return sentences;
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error selecting sentences:', error.message);
       throw error;
     }
   }
 
-  validateSentence(text) {
-    const errors = [];
+  validateSentence(text: string): SentenceValidationResult {
+    const errors: string[] = [];
     
     // Normalize spaces
     const words = text.trim().split(/\s+/);
@@ -99,7 +109,7 @@ class SentenceService {
     };
   }
 
-  async getPoolStats() {
+  async getPoolStats(): Promise<any> {
     const query = `
       SELECT 
         COUNT(*) as total,
@@ -115,7 +125,7 @@ class SentenceService {
     try {
       const result = await db.query(query);
       return result.rows[0];
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error getting pool stats:', error.message);
       throw error;
     }

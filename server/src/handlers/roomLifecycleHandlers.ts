@@ -1,8 +1,21 @@
 import { v4 as uuidv4 } from 'uuid';
+import { Server, Socket } from 'socket.io';
+import { 
+  ServerToClientEvents, 
+  ClientToServerEvents, 
+  SocketData,
+  RoomState,
+  PlayerState
+} from '@typeordie/shared';
 import roomManager from '../services/roomManager.js';
 import { validateInput, CONSTANTS } from '../utils/socketValidation.js';
+import { cleanupDisconnectTimer, playerEventQueues } from '../utils/playerStateHelpers.js';
 
-export function setupRoomLifecycleHandlers(io, socket) {
+// Helper types for strict socket.io usage
+type TypedServer = Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
+type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
+
+export function setupRoomLifecycleHandlers(io: TypedServer, socket: TypedSocket) {
   
   socket.on('create_room', async (data, callback) => {
     try {
@@ -24,14 +37,18 @@ export function setupRoomLifecycleHandlers(io, socket) {
         ipAddress
       );
 
-      socket.playerId = playerId;
+      // Persist to socket.data
       socket.data.playerId = playerId;
       socket.data.nickname = nickname.trim().substring(0, CONSTANTS.MAX_NICKNAME_LENGTH); 
-      socket.roomCode = room.roomCode;
+      socket.data.roomCode = room.roomCode;
+      
       socket.join(room.roomCode);
       
-      room.players[playerId].socketId = socket.id;
-      await roomManager.updateRoom(room.roomCode, room);
+      // Update room with socket ID
+      if (room.players[playerId]) {
+        room.players[playerId].socketId = socket.id;
+        await roomManager.updateRoom(room.roomCode, room);
+      }
 
       console.log(`Room created: ${room.roomCode}`);
 
@@ -43,7 +60,7 @@ export function setupRoomLifecycleHandlers(io, socket) {
         room: room
       });
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Create room error:', error.message);
       callback({ success: false, error: error.message });
     }
@@ -74,52 +91,38 @@ export function setupRoomLifecycleHandlers(io, socket) {
         ipAddress
       );
 
-      socket.playerId = playerId;
+      // Persist to socket.data
       socket.data.playerId = playerId;
       socket.data.nickname = nickname.trim().substring(0, CONSTANTS.MAX_NICKNAME_LENGTH);
-      socket.roomCode = room.roomCode;
-      socket.nickname = nickname.trim().substring(0, CONSTANTS.MAX_NICKNAME_LENGTH);
+      socket.data.roomCode = room.roomCode;
+      
       socket.join(room.roomCode);
 
-      if (role === 'PLAYER') {
+      if (role === 'PLAYER' && room.players[playerId]) {
         room.players[playerId].socketId = socket.id;
         await roomManager.updateRoom(room.roomCode, room);
       }
 
+      // Handle Spectator State Sync
       if (role === 'SPECTATOR' && (room.status === 'PLAYING' || room.status === 'COUNTDOWN')) {
-        socket.emit('sync_game_state', {
-          status: room.status,
-          gameStartedAt: room.gameStartedAt,
-          settings: room.settings,
-          sentences: room.sentences || []
-        });
+        // Send full room state to satisfy RoomState interface
+        socket.emit('sync_game_state', room);
 
         Object.keys(room.players).forEach(pId => {
           const p = room.players[pId];
           socket.emit('player_progress', {
             playerId: pId,
-            charIndex: p.currentCharIndex || 0,
-            sentenceIndex: p.currentSentenceIndex || 0,
-            currentWordIndex: p.currentWordIndex || 0,
-            currentCharInWord: p.currentCharInWord || 0,
-            completedSentences: p.completedSentences || 0,
-            totalCorrectChars: p.totalCorrectChars || 0,
-            totalTypedChars: p.totalTypedChars || 0,
-            totalMistypes: p.totalMistypes || 0,
-            wpm: p.averageWPM || 0,
-            status: p.status || 'ALIVE',
-            sentenceStartTime: p.sentenceStartTime,
-            mistakeStrikes: p.mistakeStrikes || 0,
-            rouletteOdds: p.rouletteOdds || 6
+            ...p
           });
         });
       }
 
+      // Broadcast to others
       socket.to(room.roomCode).emit('player_joined', {
         playerId: playerId,
         nickname: nickname.trim().substring(0, CONSTANTS.MAX_NICKNAME_LENGTH),
-        role: role,
-        updatedPlayers: Object.values(room.players)
+        role: role as 'PLAYER' | 'SPECTATOR',
+        updatedPlayers: Object.values(room.players) as PlayerState[] 
       });
 
       console.log(`Player joined: ${nickname} -> ${room.roomCode} (${role})`);
@@ -132,7 +135,7 @@ export function setupRoomLifecycleHandlers(io, socket) {
         sentences: room.sentences || []
       });
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Join room error:', error.message);
       callback({ success: false, error: error.message });
     }
@@ -142,13 +145,12 @@ export function setupRoomLifecycleHandlers(io, socket) {
     try {
       validateInput('roomCode', data);
       const { roomCode } = data;
-      const playerId = socket.playerId;
+      const playerId = socket.data.playerId;
       
       if (!playerId) {
         return callback?.({ success: false, error: 'Not in a room' });
       }
 
-      const { cleanupDisconnectTimer, playerEventQueues } = await import('../utils/playerStateHelpers.js');
       cleanupDisconnectTimer(playerId);
       playerEventQueues.delete(playerId);
 
@@ -157,18 +159,19 @@ export function setupRoomLifecycleHandlers(io, socket) {
       if (result && !result.deleted && result.room) {
         socket.to(roomCode).emit('player_left', {
           playerId,
-          updatedPlayers: Object.values(result.room.players),
+          updatedPlayers: Object.values(result.room.players) as PlayerState[],
           newHostId: result.room.hostId
         });
       }
       
       socket.leave(roomCode);
-      delete socket.playerId;
-      delete socket.roomCode;
+      
+      delete socket.data.playerId;
+      delete socket.data.roomCode;
 
       callback?.({ success: true });
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Leave room error:', error.message);
       callback?.({ success: false, error: error.message });
     }
@@ -178,7 +181,7 @@ export function setupRoomLifecycleHandlers(io, socket) {
     try {
       validateInput('roomCode', data);
       const { roomCode, sentenceCount } = data;
-      const playerId = socket.playerId;
+      const playerId = socket.data.playerId;
 
       const room = await roomManager.getRoom(roomCode);
       if (!room) return callback({ success: false, error: 'Room not found' });
@@ -194,7 +197,7 @@ export function setupRoomLifecycleHandlers(io, socket) {
       io.to(roomCode).emit('settings_updated', { sentenceCount });
       callback({ success: true });
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Change settings error:', error.message);
       callback({ success: false, error: error.message });
     }

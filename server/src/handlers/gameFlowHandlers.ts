@@ -1,3 +1,11 @@
+import { Server, Socket } from 'socket.io';
+import { 
+  ServerToClientEvents, 
+  ClientToServerEvents, 
+  SocketData,
+  RoomState,
+  PlayerState
+} from '@typeordie/shared';
 import roomManager from '../services/roomManager.js';
 import sentenceService from '../services/sentenceService.js';
 import { validateInput, CONSTANTS } from '../utils/socketValidation.js';
@@ -7,13 +15,17 @@ import {
   roomCountdownTimers 
 } from '../utils/playerStateHelpers.js';
 
-export function setupGameFlowHandlers(io, socket) {
+// Helper types for strict socket.io usage
+type TypedServer = Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
+type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
+
+export function setupGameFlowHandlers(io: TypedServer, socket: TypedSocket) {
   
   socket.on('start_game', async (data, callback) => {
     try {
       validateInput('roomCode', data);
       const { roomCode } = data;
-      const playerId = socket.playerId;
+      const playerId = socket.data.playerId; // Access via .data
 
       const room = await roomManager.getRoom(roomCode);
       if (!room) return callback({ success: false, error: 'Room not found' });
@@ -53,7 +65,6 @@ export function setupGameFlowHandlers(io, socket) {
             updatedRoom.status = 'PLAYING';
             updatedRoom.gameStartedAt = Date.now();
             
-            
             await roomManager.updateRoom(roomCode, updatedRoom);
 
             io.to(roomCode).emit('game_start', {
@@ -74,7 +85,7 @@ export function setupGameFlowHandlers(io, socket) {
 
       callback({ success: true });
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Start game error:', error.message);
       callback({ success: false, error: error.message });
     }
@@ -84,7 +95,7 @@ export function setupGameFlowHandlers(io, socket) {
     try {
       validateInput('roomCode', data);
       const { roomCode } = data;
-      const playerId = socket.playerId;
+      const playerId = socket.data.playerId;
 
       const room = await roomManager.getRoom(roomCode);
       if (!room) return callback({ success: false, error: 'Room not found' });
@@ -95,11 +106,12 @@ export function setupGameFlowHandlers(io, socket) {
       cleanupRoomTimer(roomCode);
 
       try {
-        const spectatorSocketMap = new Map();
+        // Fetch remote sockets to recover lost spectators
         const roomSockets = await io.in(roomCode).fetchSockets();
+        const spectatorSocketMap = new Map<string, any>();
         
         for (const sock of roomSockets) {
-          const sockPlayerId = sock.data?.playerId || sock.playerId;
+          const sockPlayerId = sock.data.playerId;
           if (sockPlayerId) {
             spectatorSocketMap.set(sockPlayerId, sock);
           }
@@ -111,9 +123,10 @@ export function setupGameFlowHandlers(io, socket) {
               const spectatorSocket = spectatorSocketMap.get(spectatorId);
               
               if (spectatorSocket) {
-                const nickname = spectatorSocket.data?.nickname || spectatorSocket.nickname || 'SPECTATOR';
+                const nickname = spectatorSocket.data.nickname || 'SPECTATOR';
                 
-                room.players[spectatorId] = {
+                // Reconstruct full PlayerState for recovery
+                const recoveredPlayer: PlayerState = {
                   id: spectatorId,
                   nickname: nickname,
                   isGuest: true,
@@ -131,19 +144,22 @@ export function setupGameFlowHandlers(io, socket) {
                   currentWordIndex: 0,
                   currentCharInWord: 0,
                   sentenceStartTime: null,
-                  remainingTime: CONSTANTS.GAME_DURATION_TIMEOUT,
                   rouletteHistory: [],
                   sentenceHistory: [],
                   averageWPM: 0,
                   peakWPM: 0,
-                  currentSessionWPM: 0
+                  currentSessionWPM: 0,
+                  sentenceCharCount: 0,
+                  gracePeriodActive: false
                 };
+                
+                room.players[spectatorId] = recoveredPlayer;
                 console.log(`Recovered spectator ${nickname} (${spectatorId})`);
               }
             }
           }
         }
-      } catch (recoveryError) {
+      } catch (recoveryError: any) {
         console.error(`Spectator recovery failed in ${roomCode}:`, recoveryError.message);
       }
 
@@ -158,12 +174,12 @@ export function setupGameFlowHandlers(io, socket) {
 
       await roomManager.updateRoom(roomCode, room);
 
-      io.to(roomCode).emit('game_force_reset', { room: room });
+      io.to(roomCode).emit('game_force_reset', { room });
       console.log(`Room ${roomCode} reset to lobby`);
       
       callback({ success: true });
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Force reset error:', error.message);
       callback({ success: false, error: error.message });
     }
@@ -173,7 +189,7 @@ export function setupGameFlowHandlers(io, socket) {
     try {
       validateInput('roomCode', data);
       const { roomCode } = data;
-      const playerId = socket.playerId;
+      const playerId = socket.data.playerId;
 
       if (!playerId) return callback?.({ success: false, error: 'Not authenticated' });
 
@@ -192,18 +208,17 @@ export function setupGameFlowHandlers(io, socket) {
       });
 
       try {
-        // Fetch all sockets currently connected to this room
+        // Promote spectators to players for the next round
         const roomSockets = await io.in(roomCode).fetchSockets();
         
         for (const sock of roomSockets) {
-          const sockPlayerId = sock.data?.playerId || sock.playerId;
+          const sockPlayerId = sock.data.playerId;
           
-          // If this socket's player ID is NOT in the players list, they were a pure spectator
           if (sockPlayerId && !room.players[sockPlayerId]) {
-            const nickname = sock.data?.nickname || sock.nickname || 'OPERATOR';
+            const nickname = sock.data.nickname || 'OPERATOR';
             
-            // Add them as a fresh player
-            room.players[sockPlayerId] = {
+            // Full PlayerState construction
+            const newPlayer: PlayerState = {
               id: sockPlayerId,
               nickname: nickname,
               isGuest: true,
@@ -221,31 +236,32 @@ export function setupGameFlowHandlers(io, socket) {
               currentWordIndex: 0,
               currentCharInWord: 0,
               sentenceStartTime: null,
-              remainingTime: 20,
               rouletteHistory: [],
               sentenceHistory: [],
               averageWPM: 0,
               peakWPM: 0,
-              currentSessionWPM: 0
+              currentSessionWPM: 0,
+              sentenceCharCount: 0,
+              gracePeriodActive: false
             };
+
+            room.players[sockPlayerId] = newPlayer;
             console.log(`Replay: Promoted spectator ${nickname} (${sockPlayerId}) to player`);
           }
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error(`Spectator promotion failed in ${roomCode}:`, err.message);
       }
 
       room.status = 'LOBBY';
       room.sentences = [];
       room.gameStartedAt = null;
-      room.spectators = []; // Clear spectator list as they are now players
+      room.spectators = []; 
       
-      delete room.winner;
+      // Cleanup previous game stats
       delete room.winnerId;
       delete room.winnerNickname;
       delete room.finalStats;
-      delete room.gameEndReason;
-      delete room.gameEndedAt;
 
       Object.keys(room.players).forEach(pId => {
         resetPlayerToLobbyState(room.players[pId]);
@@ -258,7 +274,7 @@ export function setupGameFlowHandlers(io, socket) {
 
       callback?.({ success: true });
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Replay error:', error.message);
       callback?.({ success: false, error: error.message });
     }

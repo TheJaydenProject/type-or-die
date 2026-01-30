@@ -1,32 +1,39 @@
 import crypto from 'crypto';
 import redis from '../config/redis.js';
 import luaScripts from '../utils/luaScripts.js';
+import { RoomState, PlayerState } from '@typeordie/shared';
+
+interface RateLimitData {
+  count: number;
+  resetTime: number;
+}
 
 class RoomManager {
+  private ROOM_PREFIX = 'room:';
+  private IP_PREFIX = 'ip:';
+  private LOCK_PREFIX = 'lock:room:';
+  private GLOBAL_ROOM_COUNT = 'global:room_count';
+  
+  private MAX_ROOMS_PER_IP = parseInt(process.env.MAX_ROOMS_PER_IP || '4');
+  private MAX_GLOBAL_ROOMS = parseInt(process.env.MAX_GLOBAL_ROOMS || '200');
+  private ROOM_TTL = parseInt(process.env.ROOM_TTL_SECONDS || '86400');
+  
+  private LOCK_TTL = 5;
+  private LOCK_RETRY_ATTEMPTS = 3;
+  private LOCK_RETRY_DELAY = 50;
+  
+  private MAX_PLAYERS_PER_ROOM = 16;
+  private EVENT_RATE_LIMIT = 100;
+  
+  private playerEventCounts = new Map<string, RateLimitData>();
+  
   constructor() {
-    this.ROOM_PREFIX = 'room:';
-    this.IP_PREFIX = 'ip:';
-    this.LOCK_PREFIX = 'lock:room:';
-    this.GLOBAL_ROOM_COUNT = 'global:room_count';
-    
-    this.MAX_ROOMS_PER_IP = parseInt(process.env.MAX_ROOMS_PER_IP) || 4;
-    this.MAX_GLOBAL_ROOMS = parseInt(process.env.MAX_GLOBAL_ROOMS) || 200;
-    this.ROOM_TTL = parseInt(process.env.ROOM_TTL_SECONDS) || 86400;
-    
-    this.LOCK_TTL = 5;
-    this.LOCK_RETRY_ATTEMPTS = 3;
-    this.LOCK_RETRY_DELAY = 50;
-    
-    this.MAX_PLAYERS_PER_ROOM = 16;
-    this.EVENT_RATE_LIMIT = 100;
-    this.playerEventCounts = new Map();
-    
     setInterval(() => this.cleanupRateLimitData(), 60000);
     setInterval(() => this.cleanupInactiveRooms(), 300000);
   }
 
   // ... [Locking methods] ...
-  async acquireLock(roomCode) {
+  async acquireLock(roomCode: string): Promise<string> {
     const lockKey = `${this.LOCK_PREFIX}${roomCode}`;
     const lockValue = crypto.randomBytes(16).toString('hex');
 
@@ -38,10 +45,10 @@ class RoomManager {
       await new Promise(resolve => setTimeout(resolve, this.LOCK_RETRY_DELAY));
     }
 
-    throw new Error(`Failed to acquire lock for room ${roomCode} after ${this.LOCK_RETRY_ATTEMPTS} attempts`);
+    throw new Error(`Failed to acquire lock for room ${roomCode}`);
   }
 
-  async releaseLock(roomCode, lockValue) {
+  async releaseLock(roomCode: string, lockValue: string): Promise<void> {
     const lockKey = `${this.LOCK_PREFIX}${roomCode}`;
     try {
       await redis.eval(
@@ -50,12 +57,12 @@ class RoomManager {
         lockKey,
         lockValue
       );
-    } catch (err) {
+    } catch (err: any) {
       console.error(`Lock release failed for ${roomCode}:`, err.message);
     }
   }
 
-  async withLock(roomCode, operation) {
+  async withLock<T>(roomCode: string, operation: () => Promise<T>): Promise<T> {
     const lockValue = await this.acquireLock(roomCode);
     try {
       return await operation();
@@ -64,7 +71,7 @@ class RoomManager {
     }
   }
 
-  generateRoomCode() {
+  generateRoomCode(): string {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let code = '';
     for (let i = 0; i < 6; i++) {
@@ -73,13 +80,13 @@ class RoomManager {
     return code;
   }
 
-  hashIP(ip) {
+  hashIP(ip: string): string {
     if (!ip) return 'unknown';
     return crypto.createHash('sha256').update(ip).digest('hex');
   }
 
   // ... [Rate limiting & Validation] ...
-  checkEventRateLimit(playerId) {
+  checkEventRateLimit(playerId: string): boolean {
     if (!playerId) return false;
     const now = Date.now();
     const playerData = this.playerEventCounts.get(playerId);
@@ -94,7 +101,7 @@ class RoomManager {
     return true;
   }
 
-  cleanupRateLimitData() {
+  cleanupRateLimitData(): void {
     const now = Date.now();
     for (const [playerId, data] of this.playerEventCounts.entries()) {
       if (now > data.resetTime + 60000) {
@@ -103,12 +110,12 @@ class RoomManager {
     }
   }
 
-  sanitizeNickname(nickname) {
+  sanitizeNickname(nickname: string): string {
     if (!nickname || typeof nickname !== 'string') return 'GUEST';
     return nickname.trim().replace(/[<>"'&]/g, '').replace(/\s+/g, ' ').substring(0, 20);
   }
 
-  validateEventData(eventName, data) {
+  validateEventData(eventName: string, data: any): boolean {
     if (!data || typeof data !== 'object') throw new Error('Invalid event data structure');
     const roomCodeRegex = /^[A-Z0-9]{6}$/;
     
@@ -136,8 +143,9 @@ class RoomManager {
     return true;
   }
 
+  // --- IP TRACKING ---
 
-  async registerRoomCreation(hashedIP, roomCode) {
+  async registerRoomCreation(hashedIP: string, roomCode: string): Promise<boolean> {
     const ipRoomsKey = `${this.IP_PREFIX}${hashedIP}:rooms`;
 
     try {
@@ -155,13 +163,13 @@ class RoomManager {
         return true;
       }
       return false;
-    } catch (err) {
+    } catch (err: any) {
       console.error('Redis Lua error (registerRoomCreation):', err.message);
       throw err;
     }
   }
 
-  async unregisterRoomCreation(hashedIP, roomCode) {
+  async unregisterRoomCreation(hashedIP: string, roomCode: string): Promise<number> {
     const ipRoomsKey = `${this.IP_PREFIX}${hashedIP}:rooms`;
 
     try {
@@ -176,8 +184,8 @@ class RoomManager {
       if (removed === 0) {
         console.warn(`Room ${roomCode} not found in IP tracking for ${hashedIP}`);
       }
-      return removed;
-    } catch (err) {
+      return removed as number;
+    } catch (err: any) {
       console.error(`Failed to unregister room ${roomCode} from IP ${hashedIP}:`, err.message);
       return 0;
     }
@@ -185,13 +193,12 @@ class RoomManager {
 
   // --- ROOM LIFECYCLE ---
 
-  async canCreateRoom(ipAddress) {
+  async canCreateRoom(ipAddress: string): Promise<{ allowed: boolean; reason?: string }> {
     const globalCount = await redis.get(this.GLOBAL_ROOM_COUNT);
     if (globalCount && parseInt(globalCount) >= this.MAX_GLOBAL_ROOMS) {
       return { allowed: false, reason: `Server full (${this.MAX_GLOBAL_ROOMS} rooms). Retry later.` };
     }
 
-    // Optimization: Check non-atomically first to avoid Lua overhead if obviously full
     const hashedIP = this.hashIP(ipAddress);
     const ipRoomsKey = `${this.IP_PREFIX}${hashedIP}:rooms`;
     const ipRooms = await redis.get(ipRoomsKey);
@@ -202,10 +209,10 @@ class RoomManager {
     return { allowed: true };
   }
 
-  async createRoom(hostId, nickname, settings, ipAddress) {
+  async createRoom(hostId: string, nickname: string, settings: any, ipAddress: string): Promise<RoomState> {
     const hashedIP = this.hashIP(ipAddress);
     
-    let roomCode;
+    let roomCode = '';
     let registered = false;
     let attempts = 0;
 
@@ -215,7 +222,6 @@ class RoomManager {
       if (attempts > 10) throw new Error('Failed to generate unique room code');
     } while (await this.roomExists(roomCode));
 
-    // Atomic Registration
     registered = await this.registerRoomCreation(hashedIP, roomCode);
     
     if (!registered) {
@@ -223,7 +229,7 @@ class RoomManager {
     }
 
     const sanitizedNickname = this.sanitizeNickname(nickname);
-    const room = {
+    const room: RoomState = {
       roomCode,
       hostId,
       creatorIP: hashedIP,
@@ -251,13 +257,13 @@ class RoomManager {
           currentWordIndex: 0,
           currentCharInWord: 0,
           sentenceStartTime: null,
-          remainingTime: 20,
           rouletteHistory: [],
           sentenceHistory: [],
           averageWPM: 0,
           peakWPM: 0,
           currentSessionWPM: 0,
-          sentenceCharCount: 0
+          sentenceCharCount: 0,
+          gracePeriodActive: false
         }
       },
       spectators: [],
@@ -278,23 +284,23 @@ class RoomManager {
     return room;
   }
 
-  async roomExists(roomCode) {
+  async roomExists(roomCode: string): Promise<boolean> {
     const room = await redis.get(`${this.ROOM_PREFIX}${roomCode}`);
     return room !== null;
   }
 
-  async getRoom(roomCode) {
+  async getRoom(roomCode: string): Promise<RoomState | null> {
     const roomData = await redis.get(`${this.ROOM_PREFIX}${roomCode}`);
     if (!roomData) return null;
     try {
       return JSON.parse(roomData);
-    } catch (err) {
+    } catch (err: any) {
       console.error(`Failed to parse room ${roomCode}:`, err.message);
       return null;
     }
   }
 
-  async updateRoom(roomCode, room) {
+  async updateRoom(roomCode: string, room: RoomState): Promise<void> {
     if (!room) throw new Error('Cannot update null room');
     room.lastActivity = Date.now();
     await redis.set(
@@ -305,7 +311,7 @@ class RoomManager {
     );
   }
 
-  async addPlayer(roomCode, playerId, nickname, ipAddress) {
+  async addPlayer(roomCode: string, playerId: string, nickname: string, ipAddress: string) {
     return this.withLock(roomCode, async () => {
       const room = await this.getRoom(roomCode);
       if (!room) throw new Error('Room not found');
@@ -344,13 +350,13 @@ class RoomManager {
         currentWordIndex: 0,
         currentCharInWord: 0,
         sentenceStartTime: null,
-        remainingTime: 20,
         rouletteHistory: [],
         sentenceHistory: [],
         averageWPM: 0,
         peakWPM: 0,
         currentSessionWPM: 0,
-        sentenceCharCount: 0
+        sentenceCharCount: 0,
+        gracePeriodActive: false
       };
 
       await this.updateRoom(roomCode, room);
@@ -359,7 +365,7 @@ class RoomManager {
     });
   }
 
-  async removePlayer(roomCode, playerId) {
+  async removePlayer(roomCode: string, playerId: string) {
     return this.withLock(roomCode, async () => {
       const room = await this.getRoom(roomCode);
       if (!room) return { deleted: true };
@@ -398,7 +404,7 @@ class RoomManager {
     });
   }
 
-  async reconnectPlayer(roomCode, playerId, newSocketId) {
+  async reconnectPlayer(roomCode: string, playerId: string, newSocketId: string) {
     return this.withLock(roomCode, async () => {
       const room = await this.getRoom(roomCode);
       if (!room) throw new Error('Room not found');
@@ -406,82 +412,52 @@ class RoomManager {
       if (!player) throw new Error('Player not found in room');
       player.status = 'ALIVE';
       player.socketId = newSocketId;
-      player.gracePeriodActive = false;
       player.disconnectedAt = null;
       await this.updateRoom(roomCode, room);
       return room;
     });
   }
 
-
-  async deleteRoom(roomCode, knownCreatorIP = null) {
+  async deleteRoom(roomCode: string, knownCreatorIP: string | null = null): Promise<void> {
     console.log(`Deleting room ${roomCode}...`);
     let creatorIP = knownCreatorIP;
     
-    // Fetch IP if not provided
     if (!creatorIP) {
       const room = await this.getRoom(roomCode);
       if (room) {
         creatorIP = room.creatorIP;
-        // Clean player event counts while we have the room
         if (room.players) {
           Object.keys(room.players).forEach(pid => this.playerEventCounts.delete(pid));
         }
       }
     }
 
-    // Execute ALL cleanup operations in parallel with guaranteed completion
     const cleanupResults = await Promise.allSettled([
-      // 1. IP tracking (atomic Lua script)
       creatorIP 
         ? this.unregisterRoomCreation(creatorIP, roomCode)
         : this.cleanupOrphanedIPTracking(roomCode),
-      
-      // 2. Global room count
       redis.decr(this.GLOBAL_ROOM_COUNT),
-      
-      // 3. Room key deletion (MUST succeed)
       redis.del(`${this.ROOM_PREFIX}${roomCode}`)
     ]);
 
-    // Verify critical operations succeeded
     const [ipCleanup, countDecr, roomDeletion] = cleanupResults;
     
     if (roomDeletion.status === 'rejected') {
       console.error(`CRITICAL: Room key deletion failed for ${roomCode}:`, roomDeletion.reason);
-    } else if (roomDeletion.value === 0) {
-      console.warn(`Room key ${roomCode} was already missing`);
-    }
-    
-    if (ipCleanup.status === 'rejected') {
-      console.error(`IP cleanup failed for ${roomCode}:`, ipCleanup.reason);
-    }
-    
-    if (countDecr.status === 'rejected') {
-      console.error(`Global count decrement failed:`, countDecr.reason);
-    }
-
-    // Log success
-    const failures = cleanupResults.filter(r => r.status === 'rejected').length;
-    if (failures === 0) {
-      console.log(`✓ Room ${roomCode} fully deleted (all 3 cleanups succeeded)`);
-    } else {
-      console.warn(`⚠ Room ${roomCode} deleted with ${failures} cleanup failures`);
     }
   }
 
-  // Force delete bypassing locks (admin/cleanup)
-  async forceDeleteRoom(roomCode) {
+  async forceDeleteRoom(roomCode: string): Promise<void> {
     await this.deleteRoom(roomCode);
   }
 
-  async cleanupOrphanedIPTracking(roomCode) {
+  async cleanupOrphanedIPTracking(roomCode: string): Promise<void> {
     try {
       const ipKeys = await redis.keys(`${this.IP_PREFIX}*:rooms`);
       for (const ipKey of ipKeys) {
         const rooms = await redis.get(ipKey);
         if (rooms && rooms.includes(roomCode)) {
-           const roomList = JSON.parse(rooms).filter(r => r !== roomCode);
+           const roomList = JSON.parse(rooms).filter((r: string) => r !== roomCode);
            if (roomList.length > 0) {
              await redis.set(ipKey, JSON.stringify(roomList), 'EX', this.ROOM_TTL);
            } else {
@@ -490,12 +466,12 @@ class RoomManager {
            console.log(`Cleaned orphaned reference to ${roomCode} in ${ipKey}`);
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(`Failed to cleanup orphaned IP tracking:`, err.message);
     }
   }
 
-  async cleanupInactiveRooms() {
+  async cleanupInactiveRooms(): Promise<void> {
     try {
       const pattern = `${this.ROOM_PREFIX}*`;
       const keys = await redis.keys(pattern);
@@ -519,12 +495,26 @@ class RoomManager {
         }
       }
       if (cleaned > 0) console.log(`Cleaned ${cleaned} inactive rooms`);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Cleanup error:', error.message);
     }
   }
 
-  async atomicCharUpdate(roomCode, playerId, char, charIndex) {
+  async getMetrics() {
+    const [globalCount, keys] = await Promise.all([
+      redis.get(this.GLOBAL_ROOM_COUNT),
+      redis.keys(`${this.ROOM_PREFIX}*`)
+    ]);
+
+    return {
+      activeRooms: globalCount ? parseInt(globalCount, 10) : 0,
+      totalKeys: keys.length,
+      memoryUsage: (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2) + ' MB',
+      uptime: Math.floor(process.uptime()) + 's'
+    };
+  }
+
+  async atomicCharUpdate(roomCode: string, playerId: string, char: string, charIndex: number) {
     try {
       const result = await redis.eval(
         luaScripts.getScript('atomicCharUpdate'),
@@ -539,7 +529,7 @@ class RoomManager {
       
       if (!result) return null;
       
-      const parsed = JSON.parse(result);
+      const parsed = JSON.parse(result as string);
       const room = await this.getRoom(roomCode);
       
       if (!room) return null;
@@ -554,7 +544,7 @@ class RoomManager {
           ...parsed.extraData
         }
       };
-    } catch (err) {
+    } catch (err: any) {
       console.error(`atomicCharUpdate failed for ${roomCode}:`, err.message);
       return null;
     }

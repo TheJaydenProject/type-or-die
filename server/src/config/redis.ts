@@ -3,12 +3,11 @@ import 'dotenv/config';
 
 const redis = new Redis({
   host: process.env.REDIS_HOST || 'localhost',
-  // parse int to ensure correct type, avoids subtle connection issues
   port: parseInt(process.env.REDIS_PORT || '6379', 10),
   password: process.env.REDIS_PASSWORD || undefined,
   
   // Custom strategy to prevent infinite retry loops in production
-  retryStrategy: (times) => {
+  retryStrategy: (times: number): number | null => {
     const MAX_RETRIES = 20;
     if (times > MAX_RETRIES) {
       console.error(`FATAL: Redis retry limit exceeded (${MAX_RETRIES} attempts). Stopping reconnection.`);
@@ -19,7 +18,7 @@ const redis = new Redis({
     return delay;
   },
 
-  reconnectOnError: (err) => {
+  reconnectOnError: (err: Error): boolean => {
     const targetError = 'READONLY';
     if (err.message.includes(targetError)) {
       return true;
@@ -37,7 +36,7 @@ redis.on('connect', () => {
   console.log('Redis: Connected');
 });
 
-redis.on('error', (err) => {
+redis.on('error', (err: Error) => {
   // Log error but do not crash; retryStrategy handles reconnection
   console.error('Redis Error:', err.message);
 });

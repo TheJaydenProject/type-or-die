@@ -1,6 +1,12 @@
-import { CONSTANTS } from './socketValidation.js';
+import { PlayerState } from '@typeordie/shared';
 
-export function resetPlayerToLobbyState(player) {
+// Use NodeJS.Timeout for server-side timers
+export const disconnectTimers = new Map<string, NodeJS.Timeout>();
+export const roomCountdownTimers = new Map<string, NodeJS.Timeout>();
+// Stores promises to ensure events process in order
+export const playerEventQueues = new Map<string, Promise<void>>();
+
+export function resetPlayerToLobbyState(player: PlayerState): void {
   player.status = 'ALIVE';
   player.currentSentenceIndex = 0;
   player.rouletteOdds = 6;
@@ -18,39 +24,38 @@ export function resetPlayerToLobbyState(player) {
   player.averageWPM = 0;
   player.peakWPM = 0;
   player.currentSessionWPM = 0;
+  
   player.sentenceCharCount = 0;
-  player.disconnectedAt = null;
   player.gracePeriodActive = false;
+  
+  player.disconnectedAt = null;
 }
 
-export const disconnectTimers = new Map();
-export const roomCountdownTimers = new Map();
-export const playerEventQueues = new Map();
-
-export function cleanupDisconnectTimer(playerId) {
+export function cleanupDisconnectTimer(playerId: string): void {
   if (disconnectTimers.has(playerId)) {
     clearTimeout(disconnectTimers.get(playerId));
     disconnectTimers.delete(playerId);
   }
 }
 
-export function cleanupRoomTimer(roomCode) {
+export function cleanupRoomTimer(roomCode: string): void {
   if (roomCountdownTimers.has(roomCode)) {
     clearTimeout(roomCountdownTimers.get(roomCode));
     roomCountdownTimers.delete(roomCode);
   }
 }
 
-export function queuePlayerEvent(playerId, eventProcessor) {
+export function queuePlayerEvent(playerId: string, eventProcessor: () => Promise<void>): Promise<void> {
   if (!playerEventQueues.has(playerId)) {
     playerEventQueues.set(playerId, Promise.resolve());
   }
 
-  const currentQueue = playerEventQueues.get(playerId);
+  // Non-null assertion (!) is safe here because we just set it if missing
+  const currentQueue = playerEventQueues.get(playerId)!;
   
   const newQueue = currentQueue
     .then(eventProcessor)
-    .catch(err => {
+    .catch((err) => {
       console.error(`Event queue error for player ${playerId}:`, err);
     });
 

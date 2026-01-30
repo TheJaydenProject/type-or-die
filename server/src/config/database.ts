@@ -15,7 +15,6 @@ const pool = new Pool({
   // Aggressive timeouts to prevent zombie connections holding resources
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
-  statement_timeout: 10000, 
   keepAlive: true,
   keepAliveInitialDelayMillis: 10000
 });
@@ -27,11 +26,11 @@ pool.on('connect', () => {
 });
 
 // Unhandled pool errors can crash the process
-pool.on('error', (err) => {
+pool.on('error', (err: Error) => {
   console.error('FATAL: Unexpected error on idle client', err);
 });
 
-export const query = (text, params) => pool.query(text, params);
+export const query = (text: string, params?: any[]) => pool.query(text, params);
 
 // Shutdown of the pool from index.js
 export const end = () => pool.end();
