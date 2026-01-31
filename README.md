@@ -39,19 +39,18 @@
 
 Type or Die is a high-stakes multiplayer typing game combining competitive typing with Russian roulette mechanics. Players race to type randomly generated sentences within a 20-second window. A three-strike error system triggers a roulette spin, where death probability increases as the game progresses.
 
-**Key Mechanics:**
-* **Risk/Reward:** Survival odds start at 1/6 and improve with survival, creating dynamic tension.
+**Key Features:**
+* **Risk/Reward Mechanics:** Survival odds start at 1/6 and improve with survival, creating dynamic tension.
 * **Real-time Sync:** Supports up to 16 concurrent players with live state synchronization.
 * **Spectator Mode:** Eliminated players and late joiners can observe active matches.
-* **Session Recovery:** 30-second grace period for player reconnections.
 
 ### Tech Stack
 
 **Frontend**
-* **Vue 3** (Composition API) & **TypeScript**
-* **Vite** for tooling
-* **Socket.IO Client** for real-time comms
-* **CSS3** (Terminal-inspired styling)
+* **Vue 3** & **TypeScript**
+* **Vite**
+* **Socket.IO Client**
+* **CSS3**
 
 **Backend**
 * **Node.js** & **Express**
