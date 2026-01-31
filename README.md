@@ -98,8 +98,8 @@ The project is organized as a **TypeScript Monorepo** using npm workspaces.
 
 ## Known Issues
 
-**Host Migration Reset**
-If the Host leaves a match, the room resets to the `LOBBY` phase for the new host. This prevents session soft-locks but interrupts active gameplay.
+**Host Disconnect on End Screen**
+Currently, a desync issue occurs if the Host exits to the main menu or disconnects directly from the post-game scoreboard instead of clicking "Return to Lobby." Because the room state is not automatically reset to the lobby phase during this specific sequence, the remaining players may be left stuck on the scoreboard or in a broken lobby state. Consequently, the newly promoted host cannot see the controls to start a new round, effectively soft-locking the session and forcing the group to recreate the room.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
