@@ -9,24 +9,35 @@ import {
 } from '@typeordie/shared';
 import roomManager from '../services/roomManager.js';
 import { validateInput, CONSTANTS } from '../utils/socketValidation.js';
-import { queuePlayerEvent, cleanupRoomTimer } from '../utils/playerStateHelpers.js';
+import { 
+  queuePlayerEvent, 
+  cleanupRoomTimer
+} from '../utils/playerStateHelpers.js';
 
-// Helper type for the IO instance with specific events and data
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
 
-/**
- * Checks if the game is over (all players dead).
- * If so, updates room status and notifies clients.
- */
+
 async function checkGameOver(io: TypedServer, roomCode: string, room: RoomState): Promise<boolean> {
   const alivePlayers = Object.values(room.players).filter((p) => p.status === 'ALIVE');
   
   if (alivePlayers.length === 0) {
     const sortedPlayers = Object.values(room.players).sort((a, b) => {
+      // 1. Primary: Sentence Count (Highest Wins)
       if (b.completedSentences !== a.completedSentences) {
         return b.completedSentences - a.completedSentences;
       }
+
+      // 2. Secondary: Efficiency Score (Correct - Mistakes)
+      // Penalty Factor is 1.0
+      const scoreA = a.totalCorrectChars - a.totalMistypes;
+      const scoreB = b.totalCorrectChars - b.totalMistypes;
+      
+      if (scoreB !== scoreA) {
+        return scoreB - scoreA;
+      }
+
+      // 3. Tie-Breaker: Raw Output (If efficiency is equal, faster typist wins)
       return b.totalCorrectChars - a.totalCorrectChars;
     });
 
@@ -34,10 +45,18 @@ async function checkGameOver(io: TypedServer, roomCode: string, room: RoomState)
     cleanupRoomTimer(roomCode);
     await roomManager.updateRoom(roomCode, room);
 
+    // Final Stats now only contain player state without score metadata
+    const finalStats: Record<string, any> = {};
+    for (const player of Object.values(room.players)) {
+      finalStats[player.id] = {
+        ...player
+      };
+    }
+
     io.to(roomCode).emit('game_ended', {
       reason: 'ALL_DEAD',
       winnerId: sortedPlayers[0]?.id || null,
-      finalStats: room.players
+      finalStats
     });
     return true;
   }
@@ -72,6 +91,7 @@ async function processCharTypedEvent(
       playerId,
       ...player
     });
+    
   } else if (result.type === 'SENTENCE_COMPLETE') {
     await roomManager.updateRoom(roomCode, room);
     
@@ -83,14 +103,18 @@ async function processCharTypedEvent(
       io.to(roomCode).emit('game_ended', {
         reason: 'COMPLETION',
         winnerId: playerId,
-        finalStats: room.players
+        finalStats: {
+          ...room.players
+        }
       });
+      
     } else {
       io.to(roomCode).emit('player_progress', {
         playerId,
         ...player
       });
     }
+    
   } else if (result.type === 'MISTYPE') {
     io.to(roomCode).emit('player_progress', {
       playerId,
@@ -118,15 +142,22 @@ async function processMistypeEvent(
   const player = room.players[playerId];
   if (!player || player.status !== 'ALIVE') return;
 
+  if (player.sentenceCharCount > 0) {
+    player.totalCorrectChars = Math.max(0, player.totalCorrectChars - player.sentenceCharCount);
+  }
+
+  // 1. Reset Server-side State for the current sentence
   player.mistakeStrikes = (player.mistakeStrikes || 0) + 1;
   player.totalMistypes++;
   player.currentCharIndex = 0;
   player.currentWordIndex = 0;
   player.currentCharInWord = 0;
+  player.sentenceCharCount = 0; 
   
   const resetStartTime = Date.now();
   player.sentenceStartTime = resetStartTime;
 
+  // Notify of the strike
   io.to(roomCode).emit('player_strike', {
     playerId: playerId,
     strikes: player.mistakeStrikes,
@@ -163,22 +194,26 @@ async function processMistypeEvent(
         roll: roll
       });
 
+      // Force UI reset to start of sentence after roulette animation
       io.to(roomCode).emit('player_progress', {
         playerId: playerId,
         rouletteOdds: player.rouletteOdds,
-        mistakeStrikes: 0
+        mistakeStrikes: 0,
+        currentCharIndex: 0,
+        currentWordIndex: 0,
+        currentCharInWord: 0,
+        sentenceStartTime: futureStartTime
       });
 
     } else {
-      player.status = 'DEAD';
-      if (!Array.isArray(player.sentenceHistory)) player.sentenceHistory = [];
-      
-      player.sentenceHistory.push({
-        sentenceIndex: sentenceIndex,
-        completed: false,
-        deathReason: 'MISTYPE',
-        timeUsed: (Date.now() - (player.sentenceStartTime || Date.now())) / 1000
-      });
+      // FATAL ROLL: Store roulette data but DO NOT set status to DEAD yet
+      (player as any).activeRoulette = {
+        survived: false,
+        newOdds: odds,
+        previousOdds: odds,
+        roll: roll,
+        expiresAt: Date.now() + 5000
+      };
 
       io.to(roomCode).emit('roulette_result', {
         playerId: playerId,
@@ -188,14 +223,47 @@ async function processMistypeEvent(
         roll: roll
       });
 
-      io.to(roomCode).emit('player_died', {
-        playerId: playerId,
-        deathReason: 'MISTYPE'
-      });
+      // Delay actual death status to allow animation to finish
+      setTimeout(async () => {
+        try {
+          const freshRoom = await roomManager.getRoom(roomCode);
+          if (!freshRoom || !freshRoom.players[playerId]) return;
 
-      await checkGameOver(io, roomCode, room);
+          const p = freshRoom.players[playerId];
+          p.status = 'DEAD';
+          
+          if (!Array.isArray(p.sentenceHistory)) p.sentenceHistory = [];
+          p.sentenceHistory.push({
+            sentenceIndex: sentenceIndex,
+            completed: false,
+            deathReason: 'MISTYPE',
+            timeUsed: (Date.now() - (p.sentenceStartTime || Date.now())) / 1000
+          });
+
+          io.to(roomCode).emit('player_died', {
+            playerId: playerId,
+            deathReason: 'MISTYPE'
+          });
+
+          await checkGameOver(io, roomCode, freshRoom);
+        } catch (err) {
+          console.error(`Error in delayed mistype death for ${playerId}:`, err);
+        }
+      }, 5000); 
+
+      // Save room with the activeRoulette state for persistence/reconnects
+      await roomManager.updateRoom(roomCode, room);
       return; 
     }
+  } else {
+    // For 1 or 2 strikes, force UI reset to start of sentence
+    io.to(roomCode).emit('player_progress', {
+      playerId: playerId,
+      currentCharIndex: 0,
+      currentWordIndex: 0,
+      currentCharInWord: 0,
+      mistakeStrikes: player.mistakeStrikes
+    });
   }
 
   await roomManager.updateRoom(roomCode, room);
@@ -213,7 +281,6 @@ async function processTimeoutEvent(
   if (!playerId) return;
 
   const { roomCode, sentenceIndex } = data;
-
   const room = await roomManager.getRoom(roomCode);
   if (!room || room.status !== 'PLAYING') return;
 
@@ -235,8 +302,16 @@ async function processTimeoutEvent(
   });
 
   if (survived) {
-    player.rouletteOdds = Math.max(2, odds - 1);
+    if (player.sentenceCharCount > 0) {
+      player.totalCorrectChars = Math.max(0, player.totalCorrectChars - player.sentenceCharCount);
+    }
+
+    player.sentenceCharCount = 0;
     player.currentCharIndex = 0;
+    player.currentWordIndex = 0;
+    player.currentCharInWord = 0;
+    
+    player.rouletteOdds = Math.max(2, odds - 1);
     
     const futureStartTime = Date.now() + 5000;
     player.sentenceStartTime = futureStartTime;
@@ -252,20 +327,22 @@ async function processTimeoutEvent(
     io.to(roomCode).emit('player_progress', {
       playerId: playerId,
       rouletteOdds: player.rouletteOdds,
-      currentCharIndex: 0
+      currentCharIndex: 0,
+      currentWordIndex: 0,
+      currentCharInWord: 0,
+      sentenceStartTime: futureStartTime
     });
     
     await roomManager.updateRoom(roomCode, room);
   } else {
-    player.status = 'DEAD';
-    if (!Array.isArray(player.sentenceHistory)) player.sentenceHistory = [];
-    
-    player.sentenceHistory.push({
-      sentenceIndex: sentenceIndex,
-      completed: false,
-      deathReason: 'TIMEOUT',
-      timeUsed: CONSTANTS.GAME_DURATION_TIMEOUT / 1000
-    });
+    // FATAL TIMEOUT: Store result for persistence
+    (player as any).activeRoulette = {
+      survived: false,
+      newOdds: odds,
+      previousOdds: odds,
+      roll: roll,
+      expiresAt: Date.now() + 5000
+    };
 
     io.to(roomCode).emit('roulette_result', {
       playerId: playerId,
@@ -274,12 +351,35 @@ async function processTimeoutEvent(
       roll: roll
     });
 
-    io.to(roomCode).emit('player_died', {
-      playerId: playerId,
-      deathReason: 'TIMEOUT'
-    });
+    // Save room state before waiting for death timeout
+    await roomManager.updateRoom(roomCode, room);
 
-    await checkGameOver(io, roomCode, room);
+    setTimeout(async () => {
+      try {
+        const freshRoom = await roomManager.getRoom(roomCode);
+        if (!freshRoom || !freshRoom.players[playerId]) return;
+
+        const p = freshRoom.players[playerId];
+        p.status = 'DEAD';
+        
+        if (!Array.isArray(p.sentenceHistory)) p.sentenceHistory = [];
+        p.sentenceHistory.push({
+          sentenceIndex: sentenceIndex,
+          completed: false,
+          deathReason: 'TIMEOUT',
+          timeUsed: CONSTANTS.GAME_DURATION_TIMEOUT / 1000
+        });
+
+        io.to(roomCode).emit('player_died', {
+          playerId: playerId,
+          deathReason: 'TIMEOUT'
+        });
+
+        await checkGameOver(io, roomCode, freshRoom);
+      } catch (err) {
+        console.error(`Error in delayed timeout death for ${playerId}:`, err);
+      }
+    }, 5000); // 5s delay matches animation
   }
 }
 

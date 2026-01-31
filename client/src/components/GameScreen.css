@@ -239,6 +239,7 @@
   display: flex;
   align-items: center;
   gap: 1rem;
+  margin-left: auto;
 }
 
 .term-btn-reset {
@@ -694,4 +695,62 @@
 
 .lb-clickable:active {
   transform: translateX(3px);
+}
+
+/* ============================================
+   ANNOUNCEMENT PANEL (SOMEONE ELSE WON)
+   ============================================ */
+
+.announcement-screen {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--bg-overlay);
+  border: 4px solid var(--accent-red); 
+  
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 100;
+  animation: announcementPulse 2s ease-in-out infinite;
+}
+
+.announcement-text {
+  text-align: center;
+  font-size: 3rem;
+  letter-spacing: 6px;
+  color: var(--accent-red);
+  line-height: 1.5;
+  text-transform: uppercase;
+  font-weight: bold;
+  text-shadow: 0 0 20px var(--accent-red);
+}
+
+.winner-name {
+  color: #fff;
+  font-size: 4rem;
+  margin: 1rem 0;
+  text-shadow: 0 0 10px #fff;
+  display: block;
+}
+
+.announcement-sub {
+  font-size: 1.2rem;
+  color: var(--text-muted);
+  margin-top: 2rem;
+  letter-spacing: 4px;
+  display: block;
+}
+
+@keyframes announcementPulse {
+  0%, 100% { 
+    border-color: var(--accent-red);
+    box-shadow: inset 0 0 20px rgba(255, 0, 0, 0.1);
+  }
+  50% { 
+    border-color: #ff4444;
+    box-shadow: inset 0 0 50px rgba(255, 0, 0, 0.3);
+  }
 }

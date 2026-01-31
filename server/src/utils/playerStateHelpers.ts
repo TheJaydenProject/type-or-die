@@ -1,11 +1,13 @@
 import { PlayerState } from '@typeordie/shared';
 
-// Use NodeJS.Timeout for server-side timers
 export const disconnectTimers = new Map<string, NodeJS.Timeout>();
 export const roomCountdownTimers = new Map<string, NodeJS.Timeout>();
-// Stores promises to ensure events process in order
 export const playerEventQueues = new Map<string, Promise<void>>();
 
+/**
+ * Resets player to lobby state. 
+ * Removed manual overrides for .score, .grade, and .normalizedScore.
+ */
 export function resetPlayerToLobbyState(player: PlayerState): void {
   player.status = 'ALIVE';
   player.currentSentenceIndex = 0;
@@ -27,7 +29,6 @@ export function resetPlayerToLobbyState(player: PlayerState): void {
   
   player.sentenceCharCount = 0;
   player.gracePeriodActive = false;
-  
   player.disconnectedAt = null;
 }
 
@@ -50,7 +51,6 @@ export function queuePlayerEvent(playerId: string, eventProcessor: () => Promise
     playerEventQueues.set(playerId, Promise.resolve());
   }
 
-  // Non-null assertion (!) is safe here because we just set it if missing
   const currentQueue = playerEventQueues.get(playerId)!;
   
   const newQueue = currentQueue
@@ -61,4 +61,9 @@ export function queuePlayerEvent(playerId: string, eventProcessor: () => Promise
 
   playerEventQueues.set(playerId, newQueue);
   return newQueue;
+}
+
+export function playerGrade(charProgress: number, sentenceLength: number): number {
+  if (sentenceLength === 0) return 0;
+  return Math.round((charProgress / sentenceLength) * 100);
 }

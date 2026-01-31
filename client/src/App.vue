@@ -46,8 +46,7 @@ const handleGameEnded = (data) => {
 // Helper: Handle player death
 const handlePlayerDied = (data) => {
   if (data.playerId === playerId.value) {
-    console.log('💀 YOU DIED - Transitioning to spectator mode')
-    userRole.value = 'SPECTATOR'
+    console.log('💀 YOU DIED - Initiating Local Spectator Protocol')
   }
 }
 
@@ -94,8 +93,13 @@ onMounted(() => {
         acc[player.id] = player
         return acc
       }, {})
+      
       currentRoom.value.players = playerMap
-      currentRoom.value.hostId = data.newHostId || currentRoom.value.hostId
+      
+      if (data.newHostId) {
+        console.log(`👑 Host transferred to: ${data.newHostId}`)
+        currentRoom.value.hostId = data.newHostId
+      }
     }
   })
 
@@ -339,7 +343,6 @@ const onMainMenu = () => {
 }
 
 const onReplay = () => {
-  // Check if I am the host
   if (currentRoom.value && currentRoom.value.hostId === playerId.value) {
     console.log('HOST REPLAY REQUESTED')
     socket.emit('request_replay', { roomCode: currentRoom.value.roomCode }, (response) => {
@@ -353,8 +356,8 @@ const onReplay = () => {
     console.log('RETURNING TO LOBBY (LOCAL)')
     gameEndData.value = null
     sentences.value = []
+    userRole.value = 'PLAYER'
     view.value = 'LOBBY'
-    
   }
 }
 </script>
@@ -480,7 +483,6 @@ const onReplay = () => {
           >
             {{ player.id === currentRoom.hostId ? '[HOST] ' : '' }}
             {{ player.nickname }}
-            {{ player.status === 'DEAD' ? ' [DEAD - BUG]' : '' }}
           </div>
         </div>
       </div>

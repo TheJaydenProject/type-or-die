@@ -141,11 +141,15 @@ export function setupConnectionHandlers(io: TypedServer, socket: TypedSocket) {
                 
                 const result = await roomManager.removePlayer(roomCode, playerId);
                 if (result && !result.deleted && result.room) {
-                  io.to(roomCode).emit('player_left', { 
-                    playerId: playerId,
-                    updatedPlayers: Object.values(result.room.players) as PlayerState[],
-                    newHostId: result.room.hostId
-                  });
+                  if (result.room.status === 'LOBBY') {
+                    io.to(roomCode).emit('game_force_reset', { room: result.room });
+                  } else {
+                    io.to(roomCode).emit('player_left', { 
+                      playerId: playerId,
+                      updatedPlayers: Object.values(result.room.players) as PlayerState[],
+                      newHostId: result.room.hostId
+                    });
+                  }
                 }
               }
             } catch (err) {
@@ -165,11 +169,15 @@ export function setupConnectionHandlers(io: TypedServer, socket: TypedSocket) {
           const result = await roomManager.removePlayer(roomCode, playerId);
           
           if (result && !result.deleted && result.room) {
-            socket.to(roomCode).emit('player_left', { 
-              playerId: playerId,
-              updatedPlayers: Object.values(result.room.players) as PlayerState[],
-              newHostId: result.room.hostId
-            });
+            if (result.room.status === 'LOBBY') {
+              io.to(roomCode).emit('game_force_reset', { room: result.room });
+            } else {
+              io.to(roomCode).emit('player_left', {
+                playerId: playerId,
+                updatedPlayers: Object.values(result.room.players) as PlayerState[],
+                newHostId: result.room.hostId
+              });
+            }
           }
         }
       } catch (err: any) {

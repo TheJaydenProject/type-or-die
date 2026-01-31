@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import redis from '../config/redis.js';
 import luaScripts from '../utils/luaScripts.js';
+import { resetPlayerToLobbyState } from '../utils/playerStateHelpers.js';
 import { RoomState, PlayerState } from '@typeordie/shared';
 
 interface RateLimitData {
@@ -396,6 +397,27 @@ class RoomManager {
           const oldHost = room.hostId;
           room.hostId = playerIds[0];
           console.log(`Host migrated: ${oldHost} -> ${room.hostId}`);
+
+          // === AUTO-JANITOR FIX ===
+          // If the host left a "Dirty" room (Playing or Finished), clean it for the new host
+          if (room.status !== 'LOBBY') {
+             console.log(`Auto-cleaning room ${roomCode} for new host...`);
+             
+             room.status = 'LOBBY';
+             room.sentences = [];
+             room.gameStartedAt = null;
+             room.spectators = [];
+             
+             // Remove game-end metadata
+             delete room.winnerId;
+             delete room.winnerNickname;
+             delete room.finalStats;
+
+             // Reset all remaining players to ALIVE/LOBBY state
+             Object.values(room.players).forEach(p => {
+               resetPlayerToLobbyState(p);
+             });
+          }
         }
       }
 
@@ -518,8 +540,9 @@ class RoomManager {
     try {
       const result = await redis.eval(
         luaScripts.getScript('atomicCharUpdate'),
-        1,
+        2,
         `${this.ROOM_PREFIX}${roomCode}`,
+        `combo:${playerId}`, 
         playerId,
         char,
         charIndex,
@@ -541,6 +564,7 @@ class RoomManager {
           type: parsed.type,
           wordIndex: parsed.wordIndex,
           charInWord: parsed.charInWord,
+          combo: parsed.combo,
           ...parsed.extraData
         }
       };

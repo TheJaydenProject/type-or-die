@@ -27,20 +27,13 @@ const totalSentences = computed(() => {
 })
 
 const grade = computed(() => {
-  const p = currentPlayer.value
+  const p = currentPlayer.value;
+  if (!p || !p.status || p.status === 'SPECTATOR') return '-';
   
-  if (!p || p.status === 'SPECTATOR') return '-'
-  if (p.status === 'DEAD') return 'F'
-  if (!p.totalTypedChars) return '-'
-
-  const acc = p.totalCorrectChars / p.totalTypedChars
-
-  if (acc === 1) return 'SS'
-  if (acc > 0.98) return 'S'
-  if (acc > 0.95) return 'A'
-  if (acc > 0.90) return 'B'
-  return 'C'
-})
+  if (p.status === 'DEAD') return 'F';
+  if (p.completedSentences >= totalSentences.value) return 'S';
+  return 'P';
+});
 
 const accuracy = computed(() => {
   const p = currentPlayer.value
@@ -55,7 +48,13 @@ const sortedPlayers = computed(() => {
     if (b.id === winnerId.value) return 1
     if (a.status === 'ALIVE' && b.status !== 'ALIVE') return -1
     if (a.status !== 'ALIVE' && b.status === 'ALIVE') return 1
-    return b.completedSentences - a.completedSentences
+    if (b.completedSentences !== a.completedSentences) {
+      return b.completedSentences - a.completedSentences
+    }
+    const scoreA = a.totalCorrectChars - a.totalMistypes
+    const scoreB = b.totalCorrectChars - b.totalMistypes
+    if (scoreB !== scoreA) return scoreB - scoreA
+    return b.totalCorrectChars - a.totalCorrectChars
   })
 })
 

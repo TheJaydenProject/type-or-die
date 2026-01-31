@@ -32,6 +32,7 @@ const isRouletteActive = ref(false)
 const rouletteResult = ref(null)
 const showVictory = ref(false)
 const showAbortConfirm = ref(false)
+const winnerAnnouncement = ref(null)
 
 const isHost = computed(() => props.room.hostId === props.playerId)
 
@@ -54,9 +55,7 @@ const initializePlayers = () => {
       averageWPM: rawP.averageWPM || 0,
       mistakeStrikes: rawP.mistakeStrikes || 0,
       status: rawP.status || 'ALIVE',
-      
       sentenceStartTime: rawP.sentenceStartTime || Date.now(),
-      
       calculatedTime: 20,
       activeRoulette: null
     }
@@ -78,11 +77,16 @@ const currentPlayer = computed(() => players.value[props.playerId] || {})
 const status = computed(() => currentPlayer.value.status || 'ALIVE')
 
 const spectatorTarget = computed(() => {
-  if (!props.isSpectator || !spectatingPlayerId.value) return null
-  return players.value[spectatingPlayerId.value] || null
+  if (spectatingPlayerId.value) {
+    return players.value[spectatingPlayerId.value] || null
+  }
+  return null
 })
 
 const displayTarget = computed(() => {
+  if (spectatingPlayerId.value) {
+    return players.value[spectatingPlayerId.value] || null
+  }
   if (props.isSpectator) {
     return spectatingPlayerId.value ? players.value[spectatingPlayerId.value] : null
   }
@@ -262,15 +266,12 @@ const onPlayerProgress = (data) => {
     const isDesynced = 
       currentSentenceIndex.value !== data.currentSentenceIndex ||
       currentWordIndex.value !== (data.currentWordIndex || 0) ||
-      Math.abs(currentCharInWord.value - (data.currentCharInWord || 0)) > 1;
+      currentCharInWord.value !== (data.currentCharInWord || 0);
 
     if (isDesynced) {
-      console.log('Desync detected - Rubber banding to server state');
-      
       currentSentenceIndex.value = data.currentSentenceIndex;
       currentWordIndex.value = data.currentWordIndex || 0;
       currentCharInWord.value = data.currentCharInWord || 0;
-      
       isProcessingError.value = false; 
     }
   }
@@ -282,12 +283,15 @@ const onPlayerStrike = (data) => {
       ...players.value[data.playerId],
       mistakeStrikes: data.strikes,
       sentenceStartTime: data.sentenceStartTime,
-      currentWordIndex: data.currentWordIndex,
-      currentCharInWord: data.currentCharInWord,
-      currentCharIndex: data.currentCharIndex
+      currentWordIndex: 0,
+      currentCharInWord: 0,
+      currentCharIndex: 0
     }
     
     if (data.playerId === props.playerId) {
+      currentWordIndex.value = 0;
+      currentCharInWord.value = 0;
+
       mistypeFlash.value = true
       flashKey.value += 1
       setTimeout(() => {
@@ -318,8 +322,16 @@ const onRouletteResult = (data) => {
     players.value[data.playerId] = {
       ...players.value[data.playerId],
       rouletteOdds: data.newOdds,
-      mistakeStrikes: 0 
+      mistakeStrikes: 0,
+      currentWordIndex: 0,
+      currentCharInWord: 0
     };
+
+    if (data.playerId === props.playerId && data.survived) {
+      currentWordIndex.value = 0;
+      currentCharInWord.value = 0;
+      isProcessingError.value = false;
+    }
 
     const fallbackOdds = data.survived ? data.newOdds + 1 : data.newOdds;
 
@@ -350,11 +362,33 @@ const onRouletteResult = (data) => {
 }
 
 const onPlayerDied = (data) => {
+  // 1. Update the local data for the dying player
   if (players.value[data.playerId]) {
     players.value[data.playerId] = {
       ...players.value[data.playerId],
       status: 'DEAD'
     }
+  }
+
+  // 2. AUTO-SWITCH LOGIC
+  if (displayTarget.value && data.playerId === displayTarget.value.id) {
+    
+    console.log(`TARGET [${data.playerId}] TERMINATED - Initiating Switch Protocol...`);
+    
+    setTimeout(() => {
+      // Find all ALIVE players to switch to
+      const alivePlayers = Object.values(players.value).filter(
+        p => p.status === 'ALIVE' && p.id !== props.playerId
+      );
+      
+      if (alivePlayers.length > 0) {
+        // Sort by progress so we watch the leader
+        alivePlayers.sort((a, b) => b.completedSentences - a.completedSentences);
+        
+        console.log(`Switching camera to ${alivePlayers[0].nickname}`);
+        spectatingPlayerId.value = alivePlayers[0].id;
+      }
+    }, 4000); // 4 Second Mourning Period
   }
 }
 
@@ -374,14 +408,22 @@ const onSentenceCompleted = (data) => {
 
 const onGameEnded = (data) => {
   console.log('🏁 Game ended event received:', data)
+  
+  // Update stats first
   Object.keys(data.finalStats).forEach(pId => {
      if (players.value[pId]) {
        players.value[pId] = { ...players.value[pId], ...data.finalStats[pId] }
      }
   })
 
+  // 1. Victory Case (I won)
   if (data.winnerId === props.playerId && data.reason === 'COMPLETION') {
     showVictory.value = true
+  } 
+  // 2. Announcement Case (Someone else won)
+  else if (data.reason === 'COMPLETION') {
+    const winner = players.value[data.winnerId]
+    winnerAnnouncement.value = winner ? winner.nickname : 'UNKNOWN'
   }
 }
 
@@ -444,10 +486,9 @@ const onLeaveClick = () => {
     />
 
     <div class="terminal-header">
-      <div v-if="isSpectator && spectatorTarget" class="spectator-header-badge">
+      <div v-if="spectatorTarget" class="spectator-header-badge">
         SPECTATING: {{ spectatorTarget.nickname }}
       </div>
-      <div v-else></div>
 
       <div class="header-right">
         <button v-if="isHost" @click="handleResetGame" class="term-btn-reset">ABORT</button>
@@ -458,19 +499,37 @@ const onLeaveClick = () => {
     <div class="terminal-body">
       <div class="typing-zone">
         
-        <div v-if="status === 'DEAD' && !showRoulette" class="death-screen">
+        <div v-if="displayTarget?.status === 'DEAD' && !showRoulette" class="death-screen">
           <div class="death-text">
-            <p>YOU ARE DEAD</p>
-            <p>FINAL: {{ currentPlayer.completedSentences }}/{{ sentences.length }}</p>
-            <p class="death-sub">[SPECTATING]</p>
+            <p>{{ (isSpectator || displayTarget?.id !== playerId) ? 'SUBJECT TERMINATED' : 'YOU ARE DEAD' }}</p>
+            
+            <p>FINAL: {{ displayTarget.completedSentences }}/{{ sentences.length }}</p>
+            
+            <p class="death-sub">
+              {{ (isSpectator || displayTarget?.id !== playerId) ? `[OBSERVING: ${displayTarget.nickname}]` : '[MISSION FAILED]' }}
+            </p>
           </div>
         </div>
 
-        <div v-if="showVictory" class="victory-screen">
+        <div 
+          v-if="showVictory || (displayTarget?.completedSentences >= sentences.length)" 
+          class="victory-screen"
+        >
           <div class="victory-text">
-            <p>MISSION COMPLETE</p>
-            <p>SURVIVED: {{ currentPlayer.completedSentences }}/{{ sentences.length }}</p>
-            <p class="victory-sub">[ANALYZING RESULTS]<span class="loading-dots"></span></p>
+            <p>{{ isSpectator ? 'TARGET EXTRACTED' : 'MISSION COMPLETE' }}</p>
+            <p>SURVIVED: {{ displayTarget.completedSentences }}/{{ sentences.length }}</p>
+            <p class="victory-sub">
+              {{ isSpectator ? `[WINNER: ${displayTarget.nickname}]` : '[ANALYZING RESULTS]' }}
+              <span class="loading-dots"></span>
+            </p>
+          </div>
+        </div>
+
+        <div v-if="winnerAnnouncement && !showVictory" class="announcement-screen">
+          <div class="announcement-text">
+            <p>PROTOCOL ENDED</p>
+            <p class="winner-name">WINNER: {{ winnerAnnouncement }}</p>
+            <p class="announcement-sub">[RETURNING TO HQ]<span class="loading-dots"></span></p>
           </div>
         </div>
 
@@ -483,11 +542,11 @@ const onLeaveClick = () => {
         />
 
         <TypingField
-          :key="`typing-${isSpectator && spectatorTarget ? spectatingPlayerId : playerId}-${isSpectator && spectatorTarget ? (spectatorTarget.currentSentenceIndex || 0) : currentSentenceIndex}`"
-            :sentences="sentences.map(s => Array.isArray(s) ? s.join(' ') : s)"
-            :currentSentenceIndex="isSpectator && spectatorTarget ? (spectatorTarget.currentSentenceIndex || 0) : currentSentenceIndex"
-            :currentWordIndex="isSpectator && spectatorTarget ? (spectatorTarget.currentWordIndex || 0) : currentWordIndex"
-            :currentCharInWord="isSpectator && spectatorTarget ? (spectatorTarget.currentCharInWord || 0) : currentCharInWord"
+          :key="`typing-${displayTarget?.id}-${displayTarget?.currentSentenceIndex}-${displayTarget?.mistakeStrikes}-${displayTarget?.status}`"
+          :sentences="sentences.map(s => Array.isArray(s) ? s.join(' ') : s)"
+          :currentSentenceIndex="displayTarget?.currentSentenceIndex || 0"
+          :currentWordIndex="displayTarget?.currentWordIndex || 0"
+          :currentCharInWord="displayTarget?.currentCharInWord || 0"
         />
       </div>
 

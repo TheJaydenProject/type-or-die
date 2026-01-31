@@ -157,11 +157,15 @@ export function setupRoomLifecycleHandlers(io: TypedServer, socket: TypedSocket)
       const result = await roomManager.removePlayer(roomCode, playerId);
 
       if (result && !result.deleted && result.room) {
-        socket.to(roomCode).emit('player_left', {
-          playerId,
-          updatedPlayers: Object.values(result.room.players) as PlayerState[],
-          newHostId: result.room.hostId
-        });
+        if (result.room.status === 'LOBBY') {
+           socket.to(roomCode).emit('game_force_reset', { room: result.room });
+        } else {
+           socket.to(roomCode).emit('player_left', {
+             playerId,
+             updatedPlayers: Object.values(result.room.players) as PlayerState[],
+             newHostId: result.room.hostId
+           });
+        }
       }
       
       socket.leave(roomCode);

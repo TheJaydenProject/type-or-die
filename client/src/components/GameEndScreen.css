@@ -96,7 +96,11 @@
   color: var(--accent-red); 
 }
 
-.grade-SS, .grade-S { 
+.grade-P { 
+  color: #aaa;
+}
+
+.grade-S { 
   text-shadow: var(--glow-text);
 }
 

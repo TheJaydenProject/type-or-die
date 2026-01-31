@@ -1,7 +1,8 @@
--- Atomic character validation and room state update
+-- Atomic character validation and room state update (Racing Mode)
 -- Returns: JSON-encoded result or nil if validation fails
 
 local room_key = KEYS[1]
+-- combo_key (KEYS[2]) is ignored in this version
 local player_id = ARGV[1]
 local char = ARGV[2]
 local char_index = tonumber(ARGV[3])
@@ -34,7 +35,7 @@ if player.currentCharInWord >= word_len then
     if not is_last_word then
         target_char = " "
     else
-        -- Attempting to type beyond the last character of the last word
+        -- Mistype: attempting to type beyond the last word
         return cjson.encode({ 
             type = 'MISTYPE', 
             player = player,
@@ -48,6 +49,8 @@ else
 end
 
 if char ~= target_char then
+    player.totalMistypes = player.totalMistypes + 1
+    
     return cjson.encode({
         type = 'MISTYPE',
         player = player,
@@ -67,7 +70,7 @@ end
 player.currentCharIndex = player.currentCharIndex + 1
 player.totalTypedChars = player.totalTypedChars + 1
 
--- WPM Calculations
+-- WPM Calculations (Kept for speed-based racing metrics)
 if room.gameStartedAt then
     local total_minutes = (timestamp - room.gameStartedAt) / 1000 / 60
     if total_minutes > 0 then
