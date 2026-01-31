@@ -24,8 +24,8 @@
       <a href="#architecture">Architecture</a>
       <ul>
         <li><a href="#system-design">System Design</a></li>
-        <li><a href="#data-flow">Data Flow</a></li>
-        <li><a href="#performance-optimizations">Performance Optimizations</a></li>
+        <li><a href="#data-flow--state-management">Data Flow & State Management</a></li>
+        <li><a href="#performance--reliability">Performance & Reliability</a></li>
       </ul>
     </li>
     <li><a href="#known-issues">Known Issues</a></li>
@@ -40,24 +40,25 @@
 Type or Die is a high-stakes multiplayer typing game combining competitive typing with Russian roulette mechanics. Players race to type randomly generated sentences within a 20-second window. A three-strike error system triggers a roulette spin, where death probability increases as the game progresses.
 
 **Key Features:**
-* **Risk/Reward Mechanics:** Survival odds start at 1/6 and improve with survival, creating dynamic tension.
-* **Real-time Sync:** Supports up to 16 concurrent players with live state synchronization.
-* **Spectator Mode:** Eliminated players and late joiners can observe active matches.
+* **Risk/Reward Mechanics:** Survival odds start at 1/6 and improve with survival (capped at 1/2), creating dynamic tension.
+* **Real-time Sync:** Supports up to 16 concurrent players with live state synchronization and ranking.
+* **Spectator Mode:** Eliminated players and late joiners can observe active matches through a real-time "Target" camera system.
+* **Graceful Reconnection:** A 30-second window allows players to recover sessions without losing progress.
 
 ### Tech Stack
 
+**Monorepo Shared**
+* **TypeScript**: Strict end-to-end typing for all Socket.IO events and entity states.
+
 **Frontend**
-* **Vue 3** & **TypeScript**
-* **Vite**
-* **Socket.IO Client**
-* **CSS3**
+* **Vue 3 (Composition API)** & **Vite**
+* **Socket.IO Client** for low-latency updates
 
 **Backend**
-* **Node.js** & **Express**
-* **TypeScript** (Strict typing across full stack)
-* **Socket.IO** for event-based game state
-* **Redis** for room state, session management, and atomic locking
-* **PostgreSQL** for persistent sentence storage
+* **Node.js (ESM)** & **Express**
+* **Redis (ioredis)**: Primary source of truth for room states and atomic logic
+* **PostgreSQL (pg)**: Sentence pool management
+* **Lua Scripts**: High-performance atomic state updates inside Redis
 
 **Infrastructure**
 * **Docker** & **Docker Compose**
@@ -67,23 +68,30 @@ Type or Die is a high-stakes multiplayer typing game combining competitive typin
 ## Architecture
 
 ### System Design
-The backend uses a handler-based pattern (Connection, Room, Game, Player) to decouple logic. The frontend uses a component hierarchy separating the Game Loop (`GameController.js`) from UI rendering (`GameScreen.vue`).
+The project is organized as a **TypeScript Monorepo** using npm workspaces to ensure the client and server never drift out of sync.
+* **`@typeordie/shared`**: Defines the shared schema for `PlayerState`, `RoomState`, and the `Socket Protocol`.
+* **`@typeordie/server`**: A handler-based architecture (Connection, Room Lifecycle, Game Flow, Player Actions) that decouples networking from business logic.
+* **`@typeordie/client`**: Separates UI rendering (`GameScreen.vue`) from typing logic (`GameController.js`) to allow for modularity and testing.
 
-### Data Flow
-1. **Room Creation:** Atomic Lua scripts validate IP limits and register rooms in Redis.
-2. **Gameplay:** Character inputs are validated server-side using atomic Lua scripts. Correct inputs broadcast updates; mistakes trigger strike/roulette logic.
-3. **State Sync:** Socket.IO broadcasts delta updates (indexes, WPM, status) to minimize bandwidth.
+### Data Flow & State Management
+* **Atomic Input Processing**: Character validation is offloaded to a **Redis Lua script** (`atomicCharUpdate.lua`). This prevents race conditions in high-WPM scenarios by calculating indexes, WPM, and sentence advancement in a single atomic step.
+* **Distributed Locking**: Room modifications (joins, leaves, status changes) are protected by a custom **Redis-based locking mechanism** (`withLock`) to ensure data integrity during simultaneous events.
+* **Event Pipeline**: To maintain strict sequence, player actions are processed through a **Promise-based Event Queue** (`queuePlayerEvent`), ensuring one input is fully resolved before the next begins for that specific player.
 
-### Performance Optimizations
-* **Atomic Operations:** Critical logic (strikes, char validation) runs in Redis Lua scripts to prevent race conditions.
-* **Efficient Queries:** Sentence selection uses `TABLESAMPLE` for O(1) sampling on large datasets.
+### Performance & Reliability
+* **Bernoulli Sampling**: `sentenceService.ts` uses `TABLESAMPLE BERNOULLI` for O(1) random retrieval from the sentence pool, with a standard fallback query for small datasets.
+* **Automated Janitor**: A background cleanup service in `roomManager.ts` periodically removes orphaned IP tracking and inactive rooms to keep Redis memory usage lean.
+* **Rate Limiting**: Integrated **IP-based room registration** and **event rate limiting** prevent server abuse.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Known Issues
 
-**Host Disconnect on End Screen**
-If the Host disconnects directly from the post-game scoreboard without clicking "Return to Lobby," the room state does not reset to the lobby phase. This soft-locks the session for remaining players, requiring room recreation.
+**Host Migration Context Reset**
+When a host leaves a room in a `PLAYING` or `FINISHED` state, the room automatically resets to the `LOBBY` phase for the new host. While this prevents session soft-locks, it results in the current match being abandoned for remaining players.
+
+**Sampling Imprecision**
+The `TABLESAMPLE` used in sentence selection may return insufficient rows if the total sentence count in the database is small, triggering a secondary fallback query.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
