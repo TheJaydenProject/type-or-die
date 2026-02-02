@@ -86,9 +86,18 @@ const handleEntryClick = (player: PlayerState) => {
         </div>
         
         <div class="lb-stats">
-          <span>PROGRESS: {{ player.completedSentences }}/{{ totalSentences }}</span>
-          <span>CHAMBER: {{ player.status === 'ALIVE' ? `1/${player.rouletteOdds}` : '--' }}</span>
-          <span>SPEED: {{ player.averageWPM || 0 }} WPM</span>
+          <div class="stat-box">
+            <span class="stat-label">PROGRESS</span>
+            <span class="stat-value">{{ player.completedSentences }}/{{ totalSentences }}</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">CHAMBER</span>
+            <span class="stat-value">{{ player.status === 'ALIVE' ? `1/${player.rouletteOdds}` : '--' }}</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">SPEED</span>
+            <span class="stat-value">{{ player.averageWPM || 0 }} WPM</span>
+          </div>
         </div>
       </div>
     </div>
