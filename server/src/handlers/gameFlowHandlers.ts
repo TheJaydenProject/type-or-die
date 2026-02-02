@@ -205,8 +205,10 @@ export function setupGameFlowHandlers(io: TypedServer, socket: TypedSocket) {
 
       const { cleanupDisconnectTimer, playerEventQueues } = await import('../utils/playerStateHelpers.js');
       Object.keys(room.players).forEach(pId => {
+        const p = room.players[pId];
         cleanupDisconnectTimer(pId);
         playerEventQueues.delete(pId);
+        resetPlayerToLobbyState(p);
       });
 
       try {

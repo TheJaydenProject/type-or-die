@@ -268,11 +268,14 @@ const onPlayerProgress = (data) => {
       currentWordIndex.value !== (data.currentWordIndex || 0) ||
       currentCharInWord.value !== (data.currentCharInWord || 0);
 
-    if (isDesynced) {
+    if (isDesynced || isProcessingError.value || showRoulette.value) {
       currentSentenceIndex.value = data.currentSentenceIndex;
       currentWordIndex.value = data.currentWordIndex || 0;
       currentCharInWord.value = data.currentCharInWord || 0;
+      
       isProcessingError.value = false; 
+      showRoulette.value = false;
+      isRouletteActive.value = false;
     }
   }
 }

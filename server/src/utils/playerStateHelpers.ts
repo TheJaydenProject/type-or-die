@@ -30,6 +30,10 @@ export function resetPlayerToLobbyState(player: PlayerState): void {
   player.sentenceCharCount = 0;
   player.gracePeriodActive = false;
   player.disconnectedAt = null;
+
+  if ((player as any).activeRoulette) {
+    delete (player as any).activeRoulette;
+  }
 }
 
 export function cleanupDisconnectTimer(playerId: string): void {
