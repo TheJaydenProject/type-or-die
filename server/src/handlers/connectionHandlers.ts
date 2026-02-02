@@ -133,6 +133,11 @@ export function setupConnectionHandlers(io: TypedServer, socket: TypedSocket) {
 
           const timeoutId = setTimeout(async () => {
             try {
+              if (!disconnectTimers.has(playerId)) {
+                console.log(`[DISCONNECT] Timer cancelled for ${playerId} (reconnected)`);
+                return;
+              }
+              
               const freshRoom = await roomManager.getRoom(roomCode);
               if (freshRoom && freshRoom.players[playerId]?.status === 'DISCONNECTED') {
                 console.log(`[DISCONNECT] Grace period expired for ${playerId}`);

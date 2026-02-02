@@ -94,6 +94,10 @@ async function processCharTypedEvent(
     return;
   }
 
+  if (player.status === 'DEAD') {
+    return;
+  }
+
   if (result.type === 'CORRECT') {
     io.to(roomCode).emit('player_progress', {
       playerId,
@@ -149,6 +153,11 @@ async function processMistypeEvent(
 
   const player = room.players[playerId];
   if (!player || player.status !== 'ALIVE') return;
+
+  if (sentenceIndex !== player.currentSentenceIndex) {
+    console.warn(`[SECURITY] Player ${playerId} sent mistype for sentence ${sentenceIndex} but is on ${player.currentSentenceIndex}`);
+    return;
+  }
 
   if (player.sentenceCharCount > 0) {
     player.totalCorrectChars = Math.max(0, player.totalCorrectChars - player.sentenceCharCount);
@@ -214,7 +223,7 @@ async function processMistypeEvent(
       });
 
     } else {
-      // FATAL ROLL: Store roulette data but DO NOT set status to DEAD yet
+      player.status = 'DEAD';
       (player as any).activeRoulette = {
         survived: false,
         newOdds: odds,
@@ -222,6 +231,9 @@ async function processMistypeEvent(
         roll: roll,
         expiresAt: Date.now() + 5000
       };
+
+      // Save room state immediately to persist DEAD status
+      await roomManager.updateRoom(roomCode, room);
 
       io.to(roomCode).emit('roulette_result', {
         playerId: playerId,
@@ -238,7 +250,6 @@ async function processMistypeEvent(
           if (!freshRoom || !freshRoom.players[playerId]) return;
 
           const p = freshRoom.players[playerId];
-          p.status = 'DEAD';
           
           if (!Array.isArray(p.sentenceHistory)) p.sentenceHistory = [];
           p.sentenceHistory.push({
@@ -294,6 +305,11 @@ async function processTimeoutEvent(
 
   const player = room.players[playerId];
   if (!player || player.status !== 'ALIVE') return;
+
+  if (sentenceIndex !== player.currentSentenceIndex) {
+    console.warn(`[SECURITY] Player ${playerId} sent timeout for sentence ${sentenceIndex} but is on ${player.currentSentenceIndex}`);
+    return;
+  }
 
   const odds = player.rouletteOdds;
   const roll = crypto.randomInt(1, odds + 1);
@@ -368,7 +384,7 @@ async function processTimeoutEvent(
         if (!freshRoom || !freshRoom.players[playerId]) return;
 
         const p = freshRoom.players[playerId];
-        p.status = 'DEAD';
+        // Status already set to DEAD above, just add history
         
         if (!Array.isArray(p.sentenceHistory)) p.sentenceHistory = [];
         p.sentenceHistory.push({

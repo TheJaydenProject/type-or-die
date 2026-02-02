@@ -2,6 +2,9 @@ import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
+import helmet from 'helmet';
+import { rateLimit } from 'express-rate-limit';
+import pino from 'pino';
 import 'dotenv/config';
 
 import { ServerToClientEvents, ClientToServerEvents, SocketData } from '@typeordie/shared';
@@ -10,12 +13,12 @@ import redis from './config/redis.js';
 import db from './config/database.js';
 import roomManager from './services/roomManager.js';
 
-// Validate critical environment variables
+const logger = pino();
 const requiredEnvVars = ['DB_PASSWORD', 'DB_HOST', 'DB_NAME'];
 const missing = requiredEnvVars.filter(key => !process.env[key]);
 
 if (missing.length > 0) {
-  console.error(`FATAL: Missing required environment variables: ${missing.join(', ')}`);
+  logger.fatal(`Missing environment variables: ${missing.join(', ')}`);
   process.exit(1);
 }
 
@@ -23,13 +26,21 @@ const app = express();
 const server = http.createServer(app);
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use(helmet());
+app.use(limiter);
 app.use(cors({
   origin: CLIENT_URL,
   credentials: true
 }));
 app.use(express.json());
 
-// Initialize Typed Socket.IO Server
 const io = new Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>(server, {
   cors: {
     origin: CLIENT_URL,
@@ -44,7 +55,6 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData
 
 setupSocketHandlers(io);
 
-// Health Check
 app.get('/health', async (req, res) => {
   try {
     const [redisCheck, dbCheck] = await Promise.all([
@@ -66,30 +76,26 @@ app.get('/health', async (req, res) => {
       metrics
     });
   } catch (error) {
-    console.error('Health Check Failure:', error);
+    logger.error({ err: error }, 'Health check failed');
     res.status(500).json({ status: 'error' });
   }
 });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`\n${'='.repeat(50)}`);
-  console.log(`Type or Die - Server Started (TypeScript)`);
-  console.log(`${'='.repeat(50)}`);
-  console.log(`Server:     http://localhost:${PORT}`);
-  console.log(`Socket.io:  Ready`);
-  console.log(`${'='.repeat(50)}\n`);
+  logger.info(`Type or Die Server running on port ${PORT}`);
 });
 
 process.on('SIGTERM', async () => {
-  console.log('SIGTERM received. Shutting down...');
+  logger.info('SIGTERM received. Cleaning up...');
   server.close(async () => {
     try {
       await redis.quit();
       await db.end();
+      process.exit(0);
     } catch (err) {
-      console.error('Cleanup error:', err);
+      logger.error({ err }, 'Cleanup error');
+      process.exit(1);
     }
-    process.exit(0);
   });
 });

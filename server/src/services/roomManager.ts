@@ -25,12 +25,15 @@ class RoomManager {
   
   private MAX_PLAYERS_PER_ROOM = 16;
   private EVENT_RATE_LIMIT = 100;
+  private lockOperationCounts = new Map<string, RateLimitData>();
+  private LOCK_OPS_PER_SECOND = 10;
   
   private playerEventCounts = new Map<string, RateLimitData>();
   
   constructor() {
     setInterval(() => this.cleanupRateLimitData(), 60000);
     setInterval(() => this.cleanupInactiveRooms(), 300000);
+    setInterval(() => this.cleanupLockRateLimitData(), 60000);
   }
 
   // ... [Locking methods] ...
@@ -51,15 +54,26 @@ class RoomManager {
 
   async releaseLock(roomCode: string, lockValue: string): Promise<void> {
     const lockKey = `${this.LOCK_PREFIX}${roomCode}`;
+    
+    if (!this.checkLockOperationRateLimit(roomCode)) {
+      console.warn(`[SECURITY] Lock operation rate limit exceeded for room ${roomCode}`);
+      throw new Error('Lock operation rate limit exceeded');
+    }
+    
     try {
-      await redis.eval(
+      const result = await redis.eval(
         luaScripts.getScript('releaseLock'),
         1,
         lockKey,
         lockValue
       );
+      
+      if (result === 0) {
+        console.warn(`[SECURITY] Failed lock release attempt for ${roomCode} - value mismatch`);
+      }
     } catch (err: any) {
       console.error(`Lock release failed for ${roomCode}:`, err.message);
+      throw err;
     }
   }
 
@@ -102,11 +116,38 @@ class RoomManager {
     return true;
   }
 
+  private checkLockOperationRateLimit(roomCode: string): boolean {
+    const now = Date.now();
+    const key = `lock:${roomCode}`;
+    const rateLimitData = this.lockOperationCounts.get(key);
+    
+    if (!rateLimitData || now > rateLimitData.resetTime) {
+      this.lockOperationCounts.set(key, { count: 1, resetTime: now + 1000 });
+      return true;
+    }
+    
+    if (rateLimitData.count >= this.LOCK_OPS_PER_SECOND) {
+      return false;
+    }
+    
+    rateLimitData.count++;
+    return true;
+  }
+
   cleanupRateLimitData(): void {
     const now = Date.now();
     for (const [playerId, data] of this.playerEventCounts.entries()) {
       if (now > data.resetTime + 60000) {
         this.playerEventCounts.delete(playerId);
+      }
+    }
+  }
+
+  private cleanupLockRateLimitData(): void {
+    const now = Date.now();
+    for (const [key, data] of this.lockOperationCounts.entries()) {
+      if (now > data.resetTime + 60000) {
+        this.lockOperationCounts.delete(key);
       }
     }
   }

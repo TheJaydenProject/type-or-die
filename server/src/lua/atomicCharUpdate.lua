@@ -20,6 +20,11 @@ if room.status ~= 'PLAYING' or not player or player.status ~= 'ALIVE' then
     return nil
 end
 
+-- Block processing if player has fatal roulette pending
+if player.activeRoulette and not player.activeRoulette.survived then
+    return nil
+end
+
 local words = room.sentences[player.currentSentenceIndex + 1]
 if not words or type(words) ~= "table" then return nil end
 
