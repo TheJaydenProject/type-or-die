@@ -104,17 +104,27 @@ export function setupRoomLifecycleHandlers(io: TypedServer, socket: TypedSocket)
       }
 
       // Handle Spectator State Sync
-      if (role === 'SPECTATOR' && (room.status === 'PLAYING' || room.status === 'COUNTDOWN')) {
-        // Send full room state to satisfy RoomState interface
-        socket.emit('sync_game_state', room);
+      if (role === 'SPECTATOR') {
+        if (room.status === 'PLAYING') {
+          socket.emit('sync_game_state', room);
 
-        Object.keys(room.players).forEach(pId => {
-          const p = room.players[pId];
-          socket.emit('player_progress', {
-            playerId: pId,
-            ...p
+          Object.keys(room.players).forEach(pId => {
+            const p = room.players[pId];
+            socket.emit('player_progress', {
+              playerId: pId,
+              ...p
+            });
           });
-        });
+        } else if (room.status === 'COUNTDOWN') {
+          const anyPlayer = Object.values(room.players)[0];
+          const startTime = anyPlayer?.sentenceStartTime || Date.now();
+
+          socket.emit('countdown_start', { 
+            sentences: (room.sentences as unknown) as string[][],
+            startTime: startTime,
+            duration: CONSTANTS.COUNTDOWN_DURATION
+          });
+        }
       }
 
       // Broadcast to others
@@ -137,6 +147,48 @@ export function setupRoomLifecycleHandlers(io: TypedServer, socket: TypedSocket)
 
     } catch (error: any) {
       console.error('Join room error:', error.message);
+      callback({ success: false, error: error.message });
+    }
+  });
+
+  socket.on('join_as_player', async (data, callback) => {
+    try {
+      const { roomCode } = data;
+      const playerId = socket.data.playerId;
+      const nickname = socket.data.nickname;
+      
+      // Safety checks
+      if (!playerId || !nickname) return callback({ success: false, error: 'No session found' });
+
+      // Force-add them as a player
+      // This works because roomManager.addPlayer overwrites existing entries
+      // and if the status is LOBBY or FINISHED, it treats them as a PLAYER.
+      const { room, role } = await roomManager.addPlayer(
+        roomCode,
+        playerId,
+        nickname,
+        socket.handshake.address
+      );
+
+      // Ensure socket is linked (redundant but safe)
+      if (room.players[playerId]) {
+        room.players[playerId].socketId = socket.id;
+        await roomManager.updateRoom(room.roomCode, room);
+      }
+
+      // Broadcast the update so everyone sees the new player
+      socket.to(roomCode).emit('player_joined', {
+        playerId,
+        nickname,
+        role: 'PLAYER',
+        updatedPlayers: Object.values(room.players)
+      });
+
+      // Send success back to the clicker
+      callback({ success: true, room });
+
+    } catch (error: any) {
+      console.error('Join as player error:', error.message);
       callback({ success: false, error: error.message });
     }
   });

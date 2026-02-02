@@ -47,7 +47,7 @@ export function setupGameFlowHandlers(io: TypedServer, socket: TypedSocket) {
       
       Object.keys(room.players).forEach(pId => {
         resetPlayerToLobbyState(room.players[pId]);
-        room.players[pId].sentenceStartTime = countdownStartTime;
+        room.players[pId].sentenceStartTime = countdownStartTime + CONSTANTS.COUNTDOWN_DURATION;
       });
 
       await roomManager.updateRoom(roomCode, room);

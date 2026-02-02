@@ -166,6 +166,7 @@ export interface ClientToServerEvents {
   join_room: (data: { roomCode: string; nickname: string }, callback: (res: any) => void) => void;
   leave_room: (data: { roomCode: string }, callback?: (res: any) => void) => void;
   change_settings: (data: { roomCode: string; sentenceCount: number }, callback: (res: any) => void) => void;
+  join_as_player: (data: { roomCode: string }, callback: (res: any) => void) => void;
 
   // Game Flow Actions
   start_game: (data: { roomCode: string }, callback: (res: any) => void) => void;

@@ -148,12 +148,27 @@ onMounted(() => {
 
   socket.on('game_force_reset', (data) => {
     console.log('GAME FORCE RESET BY HOST')
-    currentRoom.value = data.room
+    const myId = playerId.value
+    const amIInList = data.room.players && data.room.players[myId]
+
+    if (!amIInList) {
+      console.log('⚠️ I was wiped by Auto-Janitor. Auto-rejoining as player...')
+      socket.emit('join_as_player', { roomCode: data.room.roomCode }, (res) => {
+        if (res.success) {
+          currentRoom.value = res.room
+          userRole.value = 'PLAYER'
+          view.value = 'LOBBY'
+        }
+      })
+    } else {
+      currentRoom.value = data.room
+      userRole.value = 'PLAYER'
+      view.value = 'LOBBY'
+    }
+
     gameEndData.value = null
-    userRole.value = 'PLAYER'
     sentences.value = []
     countdown.value = null
-    view.value = 'LOBBY'
   })
 })
 
@@ -334,26 +349,35 @@ const handleStartGame = () => {
 
 // Handlers for End Screen interaction
 const onMainMenu = () => {
+  if (currentRoom.value) {
+     socket.emit('leave_room', { roomCode: currentRoom.value.roomCode }) //
+  }
+
   localStorage.removeItem('type_or_die_session')
   sentences.value = []
   gameEndData.value = null
   countdown.value = null
   userRole.value = null
+  currentRoom.value = null
   view.value = 'MENU'
 }
 
 const onReplay = () => {
   if (currentRoom.value && currentRoom.value.hostId === playerId.value) {
-    console.log('HOST REPLAY REQUESTED')
     socket.emit('request_replay', { roomCode: currentRoom.value.roomCode }, (response) => {
-      if (response.success) {
-        console.log('Replay request successful')
-      } else {
+      if (!response.success) {
         error.value = `ERROR: ${response.error.toUpperCase()}`
       }
     })
   } else {
-    console.log('RETURNING TO LOBBY (LOCAL)')
+    if (currentRoom.value) {
+      socket.emit('join_as_player', { roomCode: currentRoom.value.roomCode }, (response) => {
+        if (response.success) {
+           currentRoom.value = response.room
+        }
+      })
+    }
+
     gameEndData.value = null
     sentences.value = []
     userRole.value = 'PLAYER'
