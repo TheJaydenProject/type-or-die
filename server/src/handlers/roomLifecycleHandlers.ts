@@ -68,17 +68,23 @@ export function setupRoomLifecycleHandlers(io: TypedServer, socket: TypedSocket)
 
   socket.on('join_room', async (data, callback) => {
     try {
+      const ipAddress = socket.handshake.address;
+      if (!roomManager.checkEventRateLimit(ipAddress)) {
+        console.warn(`[DoS Block] Join flood detected from ${ipAddress}`);
+        return callback({ success: false, error: 'Rate limit exceeded. Please wait.' });
+      }
+
       roomManager.validateEventData('join_room', data);
       validateInput('nickname', data);
 
       const { roomCode, nickname } = data;
-      const ipAddress = socket.handshake.address;
       const playerId = uuidv4();
 
       if (!roomCode || roomCode.length !== 6) {
         return callback({ success: false, error: 'Invalid room code' });
       }
 
+      // Check existence before acquiring lock to save resources
       const roomExists = await roomManager.roomExists(roomCode.toUpperCase());
       if (!roomExists) {
         return callback({ success: false, error: 'Room not found' });

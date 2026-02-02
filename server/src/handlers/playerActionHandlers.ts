@@ -19,6 +19,10 @@ type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents, {}, Socket
 
 
 async function checkGameOver(io: TypedServer, roomCode: string, room: RoomState): Promise<boolean> {
+  if (room.status === 'FINISHED') {
+    return true;
+  }
+
   const alivePlayers = Object.values(room.players).filter((p) => p.status === 'ALIVE');
   
   if (alivePlayers.length === 0) {
@@ -86,6 +90,10 @@ async function processCharTypedEvent(
 
   const { room, player, result } = updated;
 
+  if ((player as any).activeRoulette && !(player as any).activeRoulette.survived) {
+    return;
+  }
+
   if (result.type === 'CORRECT') {
     io.to(roomCode).emit('player_progress', {
       playerId,
@@ -116,9 +124,9 @@ async function processCharTypedEvent(
     }
     
   } else if (result.type === 'MISTYPE') {
-    io.to(roomCode).emit('player_progress', {
-      playerId,
-      ...player
+    await processMistypeEvent(io, socket, { 
+      roomCode, 
+      sentenceIndex: player.currentSentenceIndex 
     });
   }
 }

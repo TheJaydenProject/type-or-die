@@ -162,8 +162,16 @@
   overflow: hidden;
 }
 
-.terminal.flash {
-  animation: brutal-flash 0.4s ease-out;
+.terminal.flash::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  pointer-events: none;
+  animation: brutal-flash 0.4s ease-out forwards;
 }
 
 .terminal-body {
