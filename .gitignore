@@ -45,3 +45,4 @@ repomix-output.xml
 .vite/
 .eslintcache
 coverage/
+.claude/settings.local.json
