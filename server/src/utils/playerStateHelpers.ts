@@ -1,4 +1,5 @@
 import { PlayerState } from '@typeordie/shared';
+import { CONSTANTS } from './socketValidation.js';
 
 export const disconnectTimers = new Map<string, NodeJS.Timeout>();
 export const roomCountdownTimers = new Map<string, NodeJS.Timeout>();
@@ -11,7 +12,7 @@ export const playerEventQueues = new Map<string, Promise<void>>();
 export function resetPlayerToLobbyState(player: PlayerState): void {
   player.status = 'ALIVE';
   player.currentSentenceIndex = 0;
-  player.rouletteOdds = 6;
+  player.rouletteOdds = CONSTANTS.INITIAL_ROULETTE_ODDS;
   player.mistakeStrikes = 0;
   player.completedSentences = 0;
   player.totalCorrectChars = 0;
@@ -31,8 +32,8 @@ export function resetPlayerToLobbyState(player: PlayerState): void {
   player.gracePeriodActive = false;
   player.disconnectedAt = null;
 
-  if ((player as any).activeRoulette) {
-    delete (player as any).activeRoulette;
+  if (player.activeRoulette) {
+    delete player.activeRoulette;
   }
 }
 
@@ -70,4 +71,38 @@ export function queuePlayerEvent(playerId: string, eventProcessor: () => Promise
 export function playerGrade(charProgress: number, sentenceLength: number): number {
   if (sentenceLength === 0) return 0;
   return Math.round((charProgress / sentenceLength) * 100);
+}
+
+export function buildFreshPlayerState(
+  id: string,
+  nickname: string,
+  socketId: string | null,
+  ipAddress: string
+): PlayerState {
+  return {
+    id,
+    nickname,
+    isGuest: true,
+    socketId,
+    ipAddress,
+    status: 'ALIVE',
+    currentSentenceIndex: 0,
+    rouletteOdds: CONSTANTS.INITIAL_ROULETTE_ODDS,
+    mistakeStrikes: 0,
+    completedSentences: 0,
+    totalCorrectChars: 0,
+    totalTypedChars: 0,
+    totalMistypes: 0,
+    currentCharIndex: 0,
+    currentWordIndex: 0,
+    currentCharInWord: 0,
+    sentenceStartTime: null,
+    rouletteHistory: [],
+    sentenceHistory: [],
+    averageWPM: 0,
+    peakWPM: 0,
+    currentSessionWPM: 0,
+    sentenceCharCount: 0,
+    gracePeriodActive: false,
+  };
 }

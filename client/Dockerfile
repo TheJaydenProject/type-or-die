@@ -25,7 +25,9 @@ COPY client ./client
 RUN npm run build --workspace=@typeordie/shared
 
 # 5. Build Client
-#    Targeting the workspace explicitly
+#    ARG declared here so Vite picks it up as an env var during build.
+#    docker-compose passes VITE_API_URL="" so the bundle uses same-origin (nginx proxy).
+ARG VITE_API_URL
 RUN npm run build --workspace=client
 
 # --- STAGE 2: SERVE ---

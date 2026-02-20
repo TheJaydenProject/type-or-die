@@ -1,18 +1,18 @@
 import { Server, Socket } from 'socket.io';
-import { 
-  ServerToClientEvents, 
-  ClientToServerEvents, 
+import {
+  ServerToClientEvents,
+  ClientToServerEvents,
   SocketData,
-  RoomState,
-  PlayerState
+  RoomState
 } from '@typeordie/shared';
 import roomManager from '../services/roomManager.js';
 import sentenceService from '../services/sentenceService.js';
-import { validateInput, CONSTANTS } from '../utils/socketValidation.js';
-import { 
-  resetPlayerToLobbyState, 
+import { validateInput, safeErrorMessage, CONSTANTS } from '../utils/socketValidation.js';
+import {
+  resetPlayerToLobbyState,
   cleanupRoomTimer,
-  roomCountdownTimers 
+  roomCountdownTimers,
+  buildFreshPlayerState
 } from '../utils/playerStateHelpers.js';
 
 // Helper types for strict socket.io usage
@@ -89,7 +89,7 @@ export function setupGameFlowHandlers(io: TypedServer, socket: TypedSocket) {
 
     } catch (error: any) {
       console.error('Start game error:', error.message);
-      callback({ success: false, error: error.message });
+      callback({ success: false, error: safeErrorMessage(error) });
     }
   });
 
@@ -126,34 +126,12 @@ export function setupGameFlowHandlers(io: TypedServer, socket: TypedSocket) {
               
               if (spectatorSocket) {
                 const nickname = spectatorSocket.data.nickname || 'SPECTATOR';
-                
-                // Reconstruct full PlayerState for recovery
-                const recoveredPlayer: PlayerState = {
-                  id: spectatorId,
-                  nickname: nickname,
-                  isGuest: true,
-                  socketId: spectatorSocket.id,
-                  ipAddress: spectatorSocket.handshake.address,
-                  status: 'ALIVE',
-                  currentSentenceIndex: 0,
-                  rouletteOdds: 6,
-                  mistakeStrikes: 0,
-                  completedSentences: 0,
-                  totalCorrectChars: 0,
-                  totalTypedChars: 0,
-                  totalMistypes: 0,
-                  currentCharIndex: 0,
-                  currentWordIndex: 0,
-                  currentCharInWord: 0,
-                  sentenceStartTime: null,
-                  rouletteHistory: [],
-                  sentenceHistory: [],
-                  averageWPM: 0,
-                  peakWPM: 0,
-                  currentSessionWPM: 0,
-                  sentenceCharCount: 0,
-                  gracePeriodActive: false
-                };
+                const recoveredPlayer = buildFreshPlayerState(
+                  spectatorId,
+                  nickname,
+                  spectatorSocket.id,
+                  spectatorSocket.handshake.address
+                );
                 
                 room.players[spectatorId] = recoveredPlayer;
                 console.log(`Recovered spectator ${nickname} (${spectatorId})`);
@@ -183,7 +161,7 @@ export function setupGameFlowHandlers(io: TypedServer, socket: TypedSocket) {
 
     } catch (error: any) {
       console.error('Force reset error:', error.message);
-      callback({ success: false, error: error.message });
+      callback({ success: false, error: safeErrorMessage(error) });
     }
   });
 
@@ -220,34 +198,12 @@ export function setupGameFlowHandlers(io: TypedServer, socket: TypedSocket) {
           
           if (sockPlayerId && !room.players[sockPlayerId]) {
             const nickname = sock.data.nickname || 'OPERATOR';
-            
-            // Full PlayerState construction
-            const newPlayer: PlayerState = {
-              id: sockPlayerId,
-              nickname: nickname,
-              isGuest: true,
-              socketId: sock.id,
-              ipAddress: sock.handshake.address,
-              status: 'ALIVE',
-              currentSentenceIndex: 0,
-              rouletteOdds: 6,
-              mistakeStrikes: 0,
-              completedSentences: 0,
-              totalCorrectChars: 0,
-              totalTypedChars: 0,
-              totalMistypes: 0,
-              currentCharIndex: 0,
-              currentWordIndex: 0,
-              currentCharInWord: 0,
-              sentenceStartTime: null,
-              rouletteHistory: [],
-              sentenceHistory: [],
-              averageWPM: 0,
-              peakWPM: 0,
-              currentSessionWPM: 0,
-              sentenceCharCount: 0,
-              gracePeriodActive: false
-            };
+            const newPlayer = buildFreshPlayerState(
+              sockPlayerId,
+              nickname,
+              sock.id,
+              sock.handshake.address
+            );
 
             room.players[sockPlayerId] = newPlayer;
             console.log(`Replay: Promoted spectator ${nickname} (${sockPlayerId}) to player`);
@@ -280,7 +236,7 @@ export function setupGameFlowHandlers(io: TypedServer, socket: TypedSocket) {
 
     } catch (error: any) {
       console.error('Replay error:', error.message);
-      callback?.({ success: false, error: error.message });
+      callback?.({ success: false, error: safeErrorMessage(error) });
     }
   });
 }

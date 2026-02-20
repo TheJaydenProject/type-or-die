@@ -8,8 +8,10 @@ import {
   PlayerState
 } from '@typeordie/shared';
 import roomManager from '../services/roomManager.js';
-import { validateInput, CONSTANTS } from '../utils/socketValidation.js';
+import { validateInput, safeErrorMessage, CONSTANTS } from '../utils/socketValidation.js';
 import { cleanupDisconnectTimer, playerEventQueues } from '../utils/playerStateHelpers.js';
+import { generateSessionToken } from '../utils/auth.js';
+import { requireValidSession } from '../utils/sessionGuard.js';
 
 // Helper types for strict socket.io usage
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
@@ -39,9 +41,10 @@ export function setupRoomLifecycleHandlers(io: TypedServer, socket: TypedSocket)
 
       // Persist to socket.data
       socket.data.playerId = playerId;
-      socket.data.nickname = nickname.trim().substring(0, CONSTANTS.MAX_NICKNAME_LENGTH); 
+      socket.data.nickname = nickname.trim().substring(0, CONSTANTS.MAX_NICKNAME_LENGTH);
       socket.data.roomCode = room.roomCode;
-      
+      socket.data.token = generateSessionToken(playerId, room.roomCode);
+
       socket.join(room.roomCode);
       
       // Update room with socket ID
@@ -62,7 +65,7 @@ export function setupRoomLifecycleHandlers(io: TypedServer, socket: TypedSocket)
 
     } catch (error: any) {
       console.error('Create room error:', error.message);
-      callback({ success: false, error: error.message });
+      callback({ success: false, error: safeErrorMessage(error) });
     }
   });
 
@@ -101,7 +104,8 @@ export function setupRoomLifecycleHandlers(io: TypedServer, socket: TypedSocket)
       socket.data.playerId = playerId;
       socket.data.nickname = nickname.trim().substring(0, CONSTANTS.MAX_NICKNAME_LENGTH);
       socket.data.roomCode = room.roomCode;
-      
+      socket.data.token = generateSessionToken(playerId, room.roomCode);
+
       socket.join(room.roomCode);
 
       if (role === 'PLAYER' && room.players[playerId]) {
@@ -153,18 +157,19 @@ export function setupRoomLifecycleHandlers(io: TypedServer, socket: TypedSocket)
 
     } catch (error: any) {
       console.error('Join room error:', error.message);
-      callback({ success: false, error: error.message });
+      callback({ success: false, error: safeErrorMessage(error) });
     }
   });
 
   socket.on('join_as_player', async (data, callback) => {
     try {
-      const { roomCode } = data;
       const playerId = socket.data.playerId;
       const nickname = socket.data.nickname;
-      
+      // Use the server-authoritative room code, not the client-supplied one.
+      const roomCode = socket.data.roomCode;
+
       // Safety checks
-      if (!playerId || !nickname) return callback({ success: false, error: 'No session found' });
+      if (!playerId || !nickname || !roomCode) return callback({ success: false, error: 'No session found' });
 
       // Force-add them as a player
       // This works because roomManager.addPlayer overwrites existing entries
@@ -195,7 +200,7 @@ export function setupRoomLifecycleHandlers(io: TypedServer, socket: TypedSocket)
 
     } catch (error: any) {
       console.error('Join as player error:', error.message);
-      callback({ success: false, error: error.message });
+      callback({ success: false, error: safeErrorMessage(error) });
     }
   });
 
@@ -235,7 +240,55 @@ export function setupRoomLifecycleHandlers(io: TypedServer, socket: TypedSocket)
 
     } catch (error: any) {
       console.error('Leave room error:', error.message);
-      callback?.({ success: false, error: error.message });
+      callback?.({ success: false, error: safeErrorMessage(error) });
+    }
+  });
+
+  socket.on('kick_player', async (data, callback) => {
+    try {
+      const session = requireValidSession(socket);
+      if (!session) return callback({ success: false, error: 'Invalid session' });
+
+      validateInput('targetPlayerId', data);
+      const { targetPlayerId } = data;
+      const roomCode = socket.data.roomCode;
+      const playerId = socket.data.playerId;
+
+      if (!roomCode || !playerId) return callback({ success: false, error: 'No active session' });
+
+      const room = await roomManager.getRoom(roomCode);
+      if (!room) return callback({ success: false, error: 'Room not found' });
+      if (room.hostId !== playerId) return callback({ success: false, error: 'Only the host can kick players' });
+      if (room.status !== 'LOBBY') return callback({ success: false, error: 'Can only kick during lobby' });
+      if (!room.players[targetPlayerId]) return callback({ success: false, error: 'Player not found' });
+      if (targetPlayerId === playerId) return callback({ success: false, error: 'Cannot kick yourself' });
+
+      const targetSocketId = room.players[targetPlayerId]?.socketId;
+      const result = await roomManager.removePlayer(roomCode, targetPlayerId);
+
+      if (result && !result.deleted && result.room) {
+        io.to(roomCode).emit('player_kicked', {
+          kickedPlayerId: targetPlayerId,
+          updatedPlayers: Object.values(result.room.players) as PlayerState[],
+          newHostId: result.room.hostId
+        });
+      }
+
+      // Remove the kicked player's socket from the room
+      if (targetSocketId) {
+        const kickedSocket = io.sockets.sockets.get(targetSocketId);
+        if (kickedSocket) {
+          kickedSocket.leave(roomCode);
+          delete kickedSocket.data.playerId;
+          delete kickedSocket.data.roomCode;
+        }
+      }
+
+      callback({ success: true });
+
+    } catch (error: any) {
+      console.error('Kick player error:', error.message);
+      callback({ success: false, error: safeErrorMessage(error) });
     }
   });
 
@@ -261,7 +314,7 @@ export function setupRoomLifecycleHandlers(io: TypedServer, socket: TypedSocket)
 
     } catch (error: any) {
       console.error('Change settings error:', error.message);
-      callback({ success: false, error: error.message });
+      callback({ success: false, error: safeErrorMessage(error) });
     }
   });
 }

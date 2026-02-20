@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import redis from '../config/redis.js';
 import luaScripts from '../utils/luaScripts.js';
-import { resetPlayerToLobbyState } from '../utils/playerStateHelpers.js';
+import { resetPlayerToLobbyState, buildFreshPlayerState } from '../utils/playerStateHelpers.js';
 import { RoomState, PlayerState } from '@typeordie/shared';
 
 interface RateLimitData {
@@ -14,22 +14,22 @@ class RoomManager {
   private IP_PREFIX = 'ip:';
   private LOCK_PREFIX = 'lock:room:';
   private GLOBAL_ROOM_COUNT = 'global:room_count';
-  
+
   private MAX_ROOMS_PER_IP = parseInt(process.env.MAX_ROOMS_PER_IP || '4');
   private MAX_GLOBAL_ROOMS = parseInt(process.env.MAX_GLOBAL_ROOMS || '200');
   private ROOM_TTL = parseInt(process.env.ROOM_TTL_SECONDS || '86400');
-  
+
   private LOCK_TTL = 5;
-  private LOCK_RETRY_ATTEMPTS = 3;
-  private LOCK_RETRY_DELAY = 50;
-  
+  private LOCK_RETRY_ATTEMPTS = 20;
+  private LOCK_RETRY_DELAY = 100;
+
   private MAX_PLAYERS_PER_ROOM = 16;
   private EVENT_RATE_LIMIT = 100;
   private lockOperationCounts = new Map<string, RateLimitData>();
-  private LOCK_OPS_PER_SECOND = 10;
-  
+  private LOCK_OPS_PER_SECOND = 50;
+
   private playerEventCounts = new Map<string, RateLimitData>();
-  
+
   constructor() {
     setInterval(() => this.cleanupRateLimitData(), 60000);
     setInterval(() => this.cleanupInactiveRooms(), 300000);
@@ -54,12 +54,12 @@ class RoomManager {
 
   async releaseLock(roomCode: string, lockValue: string): Promise<void> {
     const lockKey = `${this.LOCK_PREFIX}${roomCode}`;
-    
+
     if (!this.checkLockOperationRateLimit(roomCode)) {
       console.warn(`[SECURITY] Lock operation rate limit exceeded for room ${roomCode}`);
       throw new Error('Lock operation rate limit exceeded');
     }
-    
+
     try {
       const result = await redis.eval(
         luaScripts.getScript('releaseLock'),
@@ -67,7 +67,7 @@ class RoomManager {
         lockKey,
         lockValue
       );
-      
+
       if (result === 0) {
         console.warn(`[SECURITY] Failed lock release attempt for ${roomCode} - value mismatch`);
       }
@@ -90,7 +90,7 @@ class RoomManager {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let code = '';
     for (let i = 0; i < 6; i++) {
-      code += chars[Math.floor(Math.random() * chars.length)];
+      code += chars[crypto.randomInt(0, chars.length)];
     }
     return code;
   }
@@ -120,16 +120,16 @@ class RoomManager {
     const now = Date.now();
     const key = `lock:${roomCode}`;
     const rateLimitData = this.lockOperationCounts.get(key);
-    
+
     if (!rateLimitData || now > rateLimitData.resetTime) {
       this.lockOperationCounts.set(key, { count: 1, resetTime: now + 1000 });
       return true;
     }
-    
+
     if (rateLimitData.count >= this.LOCK_OPS_PER_SECOND) {
       return false;
     }
-    
+
     rateLimitData.count++;
     return true;
   }
@@ -160,7 +160,7 @@ class RoomManager {
   validateEventData(eventName: string, data: any): boolean {
     if (!data || typeof data !== 'object') throw new Error('Invalid event data structure');
     const roomCodeRegex = /^[A-Z0-9]{6}$/;
-    
+
     switch (eventName) {
       case 'char_typed':
         if (typeof data.char !== 'string' || data.char.length !== 1) throw new Error('Invalid char');
@@ -199,7 +199,7 @@ class RoomManager {
         roomCode,
         this.ROOM_TTL
       );
-      
+
       if (result === 1) {
         await redis.incr(this.GLOBAL_ROOM_COUNT);
         return true;
@@ -222,7 +222,7 @@ class RoomManager {
         roomCode,
         this.ROOM_TTL
       );
-      
+
       if (removed === 0) {
         console.warn(`Room ${roomCode} not found in IP tracking for ${hashedIP}`);
       }
@@ -253,7 +253,7 @@ class RoomManager {
 
   async createRoom(hostId: string, nickname: string, settings: any, ipAddress: string): Promise<RoomState> {
     const hashedIP = this.hashIP(ipAddress);
-    
+
     let roomCode = '';
     let registered = false;
     let attempts = 0;
@@ -265,7 +265,7 @@ class RoomManager {
     } while (await this.roomExists(roomCode));
 
     registered = await this.registerRoomCreation(hashedIP, roomCode);
-    
+
     if (!registered) {
       throw new Error(`Limit reached: ${this.MAX_ROOMS_PER_IP} active rooms per IP.`);
     }
@@ -281,32 +281,7 @@ class RoomManager {
         timePerSentence: 20
       },
       players: {
-        [hostId]: {
-          id: hostId,
-          nickname: sanitizedNickname,
-          isGuest: true,
-          socketId: null,
-          ipAddress: hashedIP,
-          status: 'ALIVE',
-          currentSentenceIndex: 0,
-          rouletteOdds: 6,
-          mistakeStrikes: 0,
-          completedSentences: 0,
-          totalCorrectChars: 0,
-          totalTypedChars: 0,
-          totalMistypes: 0,
-          currentCharIndex: 0,
-          currentWordIndex: 0,
-          currentCharInWord: 0,
-          sentenceStartTime: null,
-          rouletteHistory: [],
-          sentenceHistory: [],
-          averageWPM: 0,
-          peakWPM: 0,
-          currentSessionWPM: 0,
-          sentenceCharCount: 0,
-          gracePeriodActive: false
-        }
+        [hostId]: buildFreshPlayerState(hostId, sanitizedNickname, null, hashedIP)
       },
       spectators: [],
       sentences: [],
@@ -374,32 +349,7 @@ class RoomManager {
       }
 
       if (!room.players) room.players = {};
-      room.players[playerId] = {
-        id: playerId,
-        nickname: sanitizedNickname,
-        isGuest: true,
-        socketId: null,
-        ipAddress: hashedIP,
-        status: 'ALIVE',
-        currentSentenceIndex: 0,
-        rouletteOdds: 6,
-        mistakeStrikes: 0,
-        completedSentences: 0,
-        totalCorrectChars: 0,
-        totalTypedChars: 0,
-        totalMistypes: 0,
-        currentCharIndex: 0,
-        currentWordIndex: 0,
-        currentCharInWord: 0,
-        sentenceStartTime: null,
-        rouletteHistory: [],
-        sentenceHistory: [],
-        averageWPM: 0,
-        peakWPM: 0,
-        currentSessionWPM: 0,
-        sentenceCharCount: 0,
-        gracePeriodActive: false
-      };
+      room.players[playerId] = buildFreshPlayerState(playerId, sanitizedNickname, null, hashedIP);
 
       await this.updateRoom(roomCode, room);
       console.log(`Player joined: ${sanitizedNickname} -> ${roomCode}`);
@@ -418,7 +368,7 @@ class RoomManager {
       if (room.players && room.players[playerId]) {
         delete room.players[playerId];
       }
-      
+
       if (!Array.isArray(room.spectators)) room.spectators = [];
       room.spectators = room.spectators.filter(id => id !== playerId);
 
@@ -443,12 +393,12 @@ class RoomManager {
           // If the host left a "Dirty" room (Playing or Finished), clean it for the new host
           if (room.status !== 'LOBBY') {
              console.log(`Auto-cleaning room ${roomCode} for new host...`);
-             
+
              room.status = 'LOBBY';
              room.sentences = [];
              room.gameStartedAt = null;
              room.spectators = [];
-             
+
              // Remove game-end metadata
              delete room.winnerId;
              delete room.winnerNickname;
@@ -484,7 +434,7 @@ class RoomManager {
   async deleteRoom(roomCode: string, knownCreatorIP: string | null = null): Promise<void> {
     console.log(`Deleting room ${roomCode}...`);
     let creatorIP = knownCreatorIP;
-    
+
     if (!creatorIP) {
       const room = await this.getRoom(roomCode);
       if (room) {
@@ -496,7 +446,7 @@ class RoomManager {
     }
 
     const cleanupResults = await Promise.allSettled([
-      creatorIP 
+      creatorIP
         ? this.unregisterRoomCreation(creatorIP, roomCode)
         : this.cleanupOrphanedIPTracking(roomCode),
       redis.decr(this.GLOBAL_ROOM_COUNT),
@@ -504,7 +454,7 @@ class RoomManager {
     ]);
 
     const [ipCleanup, countDecr, roomDeletion] = cleanupResults;
-    
+
     if (roomDeletion.status === 'rejected') {
       console.error(`CRITICAL: Room key deletion failed for ${roomCode}:`, roomDeletion.reason);
     }
@@ -583,21 +533,21 @@ class RoomManager {
         luaScripts.getScript('atomicCharUpdate'),
         2,
         `${this.ROOM_PREFIX}${roomCode}`,
-        `combo:${playerId}`, 
+        `combo:${playerId}`,
         playerId,
         char,
         charIndex,
         Date.now(),
         this.ROOM_TTL
       );
-      
+
       if (!result) return null;
-      
+
       const parsed = JSON.parse(result as string);
       const room = await this.getRoom(roomCode);
-      
+
       if (!room) return null;
-      
+
       return {
         room,
         player: parsed.player,

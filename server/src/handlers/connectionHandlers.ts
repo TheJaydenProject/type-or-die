@@ -7,11 +7,12 @@ import {
   RoomState
 } from '@typeordie/shared';
 import roomManager from '../services/roomManager.js';
-import { validateInput, CONSTANTS } from '../utils/socketValidation.js';
-import { 
-  cleanupDisconnectTimer, 
-  disconnectTimers, 
-  playerEventQueues 
+import { validateInput, safeErrorMessage, CONSTANTS } from '../utils/socketValidation.js';
+import { generateSessionToken } from '../utils/auth.js';
+import {
+  cleanupDisconnectTimer,
+  disconnectTimers,
+  playerEventQueues
 } from '../utils/playerStateHelpers.js';
 
 // Helper types for strict socket.io usage
@@ -46,8 +47,9 @@ export function setupConnectionHandlers(io: TypedServer, socket: TypedSocket) {
 
       // 1. REHYDRATE SOCKET DATA
       socket.data.playerId = playerId;
-      socket.data.nickname = room.players[playerId]?.nickname || 'OPERATOR'; 
+      socket.data.nickname = room.players[playerId]?.nickname || 'OPERATOR';
       socket.data.roomCode = roomCode;
+      socket.data.token = generateSessionToken(playerId, roomCode);
       
       socket.join(roomCode);
 
@@ -86,7 +88,7 @@ export function setupConnectionHandlers(io: TypedServer, socket: TypedSocket) {
 
     } catch (error: any) {
       console.error('Reconnect error:', error.message);
-      callback({ success: false, error: error.message });
+      callback({ success: false, error: safeErrorMessage(error) });
     }
   });
 
@@ -115,8 +117,8 @@ export function setupConnectionHandlers(io: TypedServer, socket: TypedSocket) {
 
         const player = room.players[playerId];
         
-        const shouldUseGracePeriod = player.status === 'ALIVE' && 
-                                      (room.status === 'PLAYING' || room.status === 'COUNTDOWN');
+        const shouldUseGracePeriod = player.status === 'ALIVE' &&
+                                      (room.status === 'PLAYING' || room.status === 'COUNTDOWN' || room.status === 'LOBBY');
 
         if (shouldUseGracePeriod) {
           console.log(`[DISCONNECT] Using grace period for ${playerId}`);

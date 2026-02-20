@@ -6,7 +6,7 @@ import GameEndScreen from './components/GameEndScreen.vue'
 
 // --- 1. STATE MANAGEMENT ---
 // Initialize socket outside to keep it singleton
-const socket = io('http://localhost:3001')
+const socket = io(import.meta.env.VITE_API_URL || '')
 
 const connected = ref(false)
 const view = ref('MENU')
@@ -100,6 +100,25 @@ onMounted(() => {
         console.log(`👑 Host transferred to: ${data.newHostId}`)
         currentRoom.value.hostId = data.newHostId
       }
+    }
+  })
+
+  socket.on('player_kicked', (data) => {
+    if (data.kickedPlayerId === playerId.value) {
+      localStorage.removeItem('type_or_die_session')
+      currentRoom.value = null
+      playerId.value = null
+      userRole.value = null
+      error.value = 'YOU HAVE BEEN REMOVED BY THE HOST'
+      setTimeout(() => error.value = '', 4000)
+      view.value = 'MENU'
+    } else if (currentRoom.value) {
+      const playerMap = data.updatedPlayers.reduce((acc, player) => {
+        acc[player.id] = player
+        return acc
+      }, {})
+      currentRoom.value.players = playerMap
+      if (data.newHostId) currentRoom.value.hostId = data.newHostId
     }
   })
 
@@ -347,6 +366,14 @@ const handleStartGame = () => {
   }
 }
 
+const handleKickPlayer = (targetPlayerId) => {
+  socket.emit('kick_player', { targetPlayerId }, (response) => {
+    if (!response.success) {
+      error.value = `ERROR: ${response.error.toUpperCase()}`
+    }
+  })
+}
+
 // Handlers for End Screen interaction
 const onMainMenu = () => {
   if (currentRoom.value) {
@@ -500,13 +527,20 @@ const onReplay = () => {
       <div class="players-section">
         <h2>OPERATORS ({{ Object.values(currentRoom.players).length }})</h2>
         <div class="player-list">
-          <div 
-            v-for="player in Object.values(currentRoom.players)" 
-            :key="player.id" 
+          <div
+            v-for="player in Object.values(currentRoom.players)"
+            :key="player.id"
             class="player-item"
           >
             {{ player.id === currentRoom.hostId ? '[HOST] ' : '' }}
             {{ player.nickname }}
+            <button
+              v-if="currentRoom.hostId === playerId && player.id !== playerId"
+              @click="handleKickPlayer(player.id)"
+              class="btn-kick"
+            >
+              KICK
+            </button>
           </div>
         </div>
       </div>

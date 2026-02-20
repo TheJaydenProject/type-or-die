@@ -363,6 +363,9 @@ button:disabled {
   background: transparent;
   transition: background 0.1s;
   font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .player-item:last-child {
@@ -371,6 +374,23 @@ button:disabled {
 
 .player-item:hover {
   background: rgba(255, 255, 255, 0.02);
+}
+
+.btn-kick {
+  padding: 6px 16px;
+  background: transparent;
+  border: 1px solid #ff4444;
+  color: #ff4444;
+  font-family: inherit;
+  font-size: 0.85em;
+  cursor: pointer;
+  letter-spacing: 0.1em;
+  flex-shrink: 0;
+}
+
+.btn-kick:hover {
+  background: #ff4444;
+  color: #000;
 }
 
 /* ===== COUNTDOWN SCREEN ===== */

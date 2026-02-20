@@ -8,7 +8,7 @@ import {
   RoomState
 } from '@typeordie/shared';
 import roomManager from '../services/roomManager.js';
-import { validateInput, CONSTANTS } from '../utils/socketValidation.js';
+import { validateInput, safeErrorMessage, CONSTANTS } from '../utils/socketValidation.js';
 import { 
   queuePlayerEvent, 
   cleanupRoomTimer
@@ -90,7 +90,7 @@ async function processCharTypedEvent(
 
   const { room, player, result } = updated;
 
-  if ((player as any).activeRoulette && !(player as any).activeRoulette.survived) {
+  if (player.activeRoulette && !player.activeRoulette.survived) {
     return;
   }
 
@@ -178,11 +178,11 @@ async function processMistypeEvent(
   io.to(roomCode).emit('player_strike', {
     playerId: playerId,
     strikes: player.mistakeStrikes,
-    maxStrikes: 3,
+    maxStrikes: CONSTANTS.MAX_STRIKES,
     sentenceStartTime: resetStartTime
   });
 
-  if (player.mistakeStrikes >= 3) {
+  if (player.mistakeStrikes >= CONSTANTS.MAX_STRIKES) {
     player.mistakeStrikes = 0;
     const odds = player.rouletteOdds;
     const roll = crypto.randomInt(1, odds + 1);
@@ -199,10 +199,10 @@ async function processMistypeEvent(
     });
 
     if (survived) {
-      player.rouletteOdds = Math.max(2, odds - 1);
-      const futureStartTime = Date.now() + 5000;
+      player.rouletteOdds = Math.max(CONSTANTS.MIN_ROULETTE_ODDS, odds - 1);
+      const futureStartTime = Date.now() + CONSTANTS.ROULETTE_ANIMATION_MS;
       player.sentenceStartTime = futureStartTime;
-      
+
       io.to(roomCode).emit('roulette_result', {
         playerId: playerId,
         survived: true,
@@ -224,12 +224,12 @@ async function processMistypeEvent(
 
     } else {
       player.status = 'DEAD';
-      (player as any).activeRoulette = {
+      player.activeRoulette = {
         survived: false,
         newOdds: odds,
         previousOdds: odds,
         roll: roll,
-        expiresAt: Date.now() + 5000
+        expiresAt: Date.now() + CONSTANTS.ROULETTE_ANIMATION_MS
       };
 
       // Save room state immediately to persist DEAD status
@@ -243,14 +243,14 @@ async function processMistypeEvent(
         roll: roll
       });
 
-      // Delay actual death status to allow animation to finish
+      // Delay death broadcast to allow roulette animation to finish
       setTimeout(async () => {
         try {
           const freshRoom = await roomManager.getRoom(roomCode);
           if (!freshRoom || !freshRoom.players[playerId]) return;
 
           const p = freshRoom.players[playerId];
-          
+
           if (!Array.isArray(p.sentenceHistory)) p.sentenceHistory = [];
           p.sentenceHistory.push({
             sentenceIndex: sentenceIndex,
@@ -268,11 +268,11 @@ async function processMistypeEvent(
         } catch (err) {
           console.error(`Error in delayed mistype death for ${playerId}:`, err);
         }
-      }, 5000); 
+      }, CONSTANTS.ROULETTE_ANIMATION_MS);
 
       // Save room with the activeRoulette state for persistence/reconnects
       await roomManager.updateRoom(roomCode, room);
-      return; 
+      return;
     }
   } else {
     // For 1 or 2 strikes, force UI reset to start of sentence
@@ -334,10 +334,10 @@ async function processTimeoutEvent(
     player.currentCharIndex = 0;
     player.currentWordIndex = 0;
     player.currentCharInWord = 0;
-    
-    player.rouletteOdds = Math.max(2, odds - 1);
-    
-    const futureStartTime = Date.now() + 5000;
+
+    player.rouletteOdds = Math.max(CONSTANTS.MIN_ROULETTE_ODDS, odds - 1);
+
+    const futureStartTime = Date.now() + CONSTANTS.ROULETTE_ANIMATION_MS;
     player.sentenceStartTime = futureStartTime;
 
     io.to(roomCode).emit('roulette_result', {
@@ -356,16 +356,16 @@ async function processTimeoutEvent(
       currentCharInWord: 0,
       sentenceStartTime: futureStartTime
     });
-    
+
     await roomManager.updateRoom(roomCode, room);
   } else {
-    // FATAL TIMEOUT: Store result for persistence
-    (player as any).activeRoulette = {
+    player.status = 'DEAD';
+    player.activeRoulette = {
       survived: false,
       newOdds: odds,
       previousOdds: odds,
       roll: roll,
-      expiresAt: Date.now() + 5000
+      expiresAt: Date.now() + CONSTANTS.ROULETTE_ANIMATION_MS
     };
 
     io.to(roomCode).emit('roulette_result', {
@@ -378,14 +378,14 @@ async function processTimeoutEvent(
     // Save room state before waiting for death timeout
     await roomManager.updateRoom(roomCode, room);
 
+    // Delay death broadcast to allow roulette animation to finish
     setTimeout(async () => {
       try {
         const freshRoom = await roomManager.getRoom(roomCode);
         if (!freshRoom || !freshRoom.players[playerId]) return;
 
         const p = freshRoom.players[playerId];
-        // Status already set to DEAD above, just add history
-        
+
         if (!Array.isArray(p.sentenceHistory)) p.sentenceHistory = [];
         p.sentenceHistory.push({
           sentenceIndex: sentenceIndex,
@@ -403,7 +403,7 @@ async function processTimeoutEvent(
       } catch (err) {
         console.error(`Error in delayed timeout death for ${playerId}:`, err);
       }
-    }, 5000); // 5s delay matches animation
+    }, CONSTANTS.ROULETTE_ANIMATION_MS);
   }
 }
 
@@ -423,7 +423,7 @@ export function setupPlayerActionHandlers(io: TypedServer, socket: TypedSocket):
 
     } catch (error: any) {
       console.error('Char typed error:', error.message);
-      socket.emit('event_error', { event: 'char_typed', error: error.message });
+      socket.emit('event_error', { event: 'char_typed', error: safeErrorMessage(error) });
     }
   });
 
@@ -441,7 +441,7 @@ export function setupPlayerActionHandlers(io: TypedServer, socket: TypedSocket):
 
     } catch (error: any) {
       console.error('Mistype error:', error.message);
-      socket.emit('event_error', { event: 'mistype', error: error.message });
+      socket.emit('event_error', { event: 'mistype', error: safeErrorMessage(error) });
     }
   });
 
@@ -459,7 +459,7 @@ export function setupPlayerActionHandlers(io: TypedServer, socket: TypedSocket):
 
     } catch (error: any) {
       console.error('Timeout error:', error.message);
-      socket.emit('event_error', { event: 'sentence_timeout', error: error.message });
+      socket.emit('event_error', { event: 'sentence_timeout', error: safeErrorMessage(error) });
     }
   });
 }
