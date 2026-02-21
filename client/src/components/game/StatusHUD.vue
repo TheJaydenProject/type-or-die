@@ -1,11 +1,11 @@
 <script setup>
 defineProps({
-  remainingTime: { type: Number, required: true },
-  mistakeStrikes: { type: Number, default: 0 },
-  currentSentenceIndex: { type: Number, default: 0 },
-  totalSentences: { type: Number, default: 0 },
-  mistypeFlash: { type: Boolean, default: false }
-})
+	remainingTime: { type: Number, required: true },
+	mistakeStrikes: { type: Number, default: 0 },
+	currentSentenceIndex: { type: Number, default: 0 },
+	totalSentences: { type: Number, default: 0 },
+	mistypeFlash: { type: Boolean, default: false },
+});
 </script>
 
 <template>

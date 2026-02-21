@@ -1,74 +1,76 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from "vue";
 
 const props = defineProps({
-  survived: Boolean,
-  previousOdds: Number,
-  newOdds: Number,
-  roll: Number
-})
+	survived: Boolean,
+	previousOdds: Number,
+	newOdds: Number,
+	roll: Number,
+});
 
-const phase = ref('spinning')
-const currentHighlight = ref(null)
-const cylinder = ref(null)
+const phase = ref("spinning");
+const currentHighlight = ref(null);
+const cylinder = ref(null);
 
-const chambers = computed(() => {
-  return Array.from({ length: props.previousOdds }, (_, i) => ({
-    isBullet: i === 0,
-    index: i
-  }))
-})
+const _chambers = computed(() => {
+	return Array.from({ length: props.previousOdds }, (_, i) => ({
+		isBullet: i === 0,
+		index: i,
+	}));
+});
 
-const degreesPerChamber = computed(() => 360 / props.previousOdds)
+const degreesPerChamber = computed(() => 360 / props.previousOdds);
 
 onMounted(() => {
-  if (!cylinder.value) return
+	if (!cylinder.value) return;
 
-  const targetChamber = props.roll - 1
-  const degPerChamber = degreesPerChamber.value
+	const targetChamber = props.roll - 1;
+	const degPerChamber = degreesPerChamber.value;
 
-  const fullRotations = 3
-  const finalAngle = -(targetChamber * degPerChamber)
-  const totalRotation = (fullRotations * 360) + finalAngle
+	const fullRotations = 3;
+	const finalAngle = -(targetChamber * degPerChamber);
+	const totalRotation = fullRotations * 360 + finalAngle;
 
-  cylinder.value.classList.add('spinning')
+	cylinder.value.classList.add("spinning");
 
-  let currentRotation = 0
-  const spinDuration = 2000
-  const startTime = Date.now()
+	let currentRotation = 0;
+	const spinDuration = 2000;
+	const startTime = Date.now();
 
-  const spin = () => {
-    const elapsed = Date.now() - startTime
-    const progress = Math.min(elapsed / spinDuration, 1)
+	const spin = () => {
+		const elapsed = Date.now() - startTime;
+		const progress = Math.min(elapsed / spinDuration, 1);
 
-    const easeProgress = 1 - Math.pow(1 - progress, 3)
-    currentRotation = totalRotation * easeProgress
+		const easeProgress = 1 - (1 - progress) ** 3;
+		currentRotation = totalRotation * easeProgress;
 
-    if (cylinder.value) {
-      cylinder.value.style.transform = `translate(-50%, -50%) rotate(${currentRotation}deg)`
-    }
+		if (cylinder.value) {
+			cylinder.value.style.transform = `translate(-50%, -50%) rotate(${currentRotation}deg)`;
+		}
 
-    const normalizedRotation = ((currentRotation % 360) + 360) % 360
-    const currentChamberIndex = Math.round(normalizedRotation / degPerChamber) % props.previousOdds
-    currentHighlight.value = (props.previousOdds - currentChamberIndex) % props.previousOdds
+		const normalizedRotation = ((currentRotation % 360) + 360) % 360;
+		const currentChamberIndex =
+			Math.round(normalizedRotation / degPerChamber) % props.previousOdds;
+		currentHighlight.value =
+			(props.previousOdds - currentChamberIndex) % props.previousOdds;
 
-    if (progress < 1) {
-      requestAnimationFrame(spin)
-    } else {
-      if (cylinder.value) cylinder.value.classList.remove('spinning')
-      phase.value = 'stopped'
-      currentHighlight.value = targetChamber
+		if (progress < 1) {
+			requestAnimationFrame(spin);
+		} else {
+			if (cylinder.value) cylinder.value.classList.remove("spinning");
+			phase.value = "stopped";
+			currentHighlight.value = targetChamber;
 
-      setTimeout(() => {
-        phase.value = 'result'
-      }, 450)
-    }
-  }
+			setTimeout(() => {
+				phase.value = "result";
+			}, 450);
+		}
+	};
 
-  setTimeout(() => {
-    requestAnimationFrame(spin)
-  }, 200)
-})
+	setTimeout(() => {
+		requestAnimationFrame(spin);
+	}, 200);
+});
 </script>
 
 <template>

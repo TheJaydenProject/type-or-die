@@ -1,5 +1,5 @@
 # --- STAGE 1: BUILDER ---
-FROM node:18-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -22,7 +22,7 @@ RUN npm run build --workspace=@typeordie/shared
 RUN npm run build --workspace=@typeordie/server
 
 # --- STAGE 2: RUNNER ---
-FROM node:18-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 

@@ -1,142 +1,164 @@
 /* ===== REVOLVER ROULETTE STYLES ===== */
 
 .roulette-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.98);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10000;
-  animation: scanlineFlicker 0.1s steps(2) 3;
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	background: rgba(0, 0, 0, 0.98);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 10000;
+	animation: scanlineFlicker 0.1s steps(2) 3;
 }
 
 @keyframes scanlineFlicker {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.95; }
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.95;
+	}
 }
 
 .revolver-container {
-  text-align: center;
-  font-family: 'Courier New', monospace;
-  text-transform: uppercase;
-  width: 90%;
-  max-width: 1200px;
-  position: relative;
-  padding: 3rem;
-  background: rgba(0, 0, 0, 0.9);
+	text-align: center;
+	font-family: "Courier New", monospace;
+	text-transform: uppercase;
+	width: 90%;
+	max-width: 1200px;
+	position: relative;
+	padding: 3rem;
+	background: rgba(0, 0, 0, 0.9);
 }
 
 .revolver-title {
-  font-size: clamp(2rem, 5vw, 4rem);
-  color: var(--accent-red);
-  margin-bottom: clamp(2rem, 5vh, 6rem);
-  letter-spacing: clamp(4px, 0.5vw, 8px);
-  border-bottom: clamp(3px, 0.5vw, 6px) solid var(--accent-red);
-  padding-bottom: clamp(10px, 1vh, 20px);
-  display: inline-block;
+	font-size: clamp(2rem, 5vw, 4rem);
+	color: var(--accent-red);
+	margin-bottom: clamp(2rem, 5vh, 6rem);
+	letter-spacing: clamp(4px, 0.5vw, 8px);
+	border-bottom: clamp(3px, 0.5vw, 6px) solid var(--accent-red);
+	padding-bottom: clamp(10px, 1vh, 20px);
+	display: inline-block;
 }
 
 .revolver-chamber-area {
-  position: relative;
-  width: clamp(300px, 40vw, 600px);
-  height: clamp(300px, 40vw, 600px);
-  margin: 0 auto -80px auto;
+	position: relative;
+	width: clamp(300px, 40vw, 600px);
+	height: clamp(300px, 40vw, 600px);
+	margin: 0 auto -80px auto;
 }
 
 .revolver-hammer {
-  position: absolute;
-  top: clamp(-30px, -5%, -60px);
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: clamp(4rem, 8vw, 8rem);
-  color: var(--accent-red);
-  z-index: 10;
-  pointer-events: none;
+	position: absolute;
+	top: clamp(-30px, -5%, -60px);
+	left: 50%;
+	transform: translateX(-50%);
+	font-size: clamp(4rem, 8vw, 8rem);
+	color: var(--accent-red);
+	z-index: 10;
+	pointer-events: none;
 }
 
 .revolver-cylinder {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 100%;
-  height: 100%;
-  transform: translate(-50%, -50%) rotate(0deg);
-  will-change: transform;
-  transition: none;
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	width: 100%;
+	height: 100%;
+	transform: translate(-50%, -50%) rotate(0deg);
+	will-change: transform;
+	transition: none;
 }
 
 .revolver-cylinder.spinning {
-  transition: none !important;
+	transition: none;
 }
 
 .chamber {
-  position: absolute;
-  width: clamp(60px, 8vw, 120px);
-  height: clamp(60px, 8vw, 120px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: clamp(3rem, 6vw, 6rem);
-  transform: translate(-50%, -50%);
+	position: absolute;
+	width: clamp(60px, 8vw, 120px);
+	height: clamp(60px, 8vw, 120px);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: clamp(3rem, 6vw, 6rem);
+	transform: translate(-50%, -50%);
 }
 
 .chamber::before {
-  content: '○';
-  color: var(--text-dim);
-  transition: none;
+	content: "○";
+	color: var(--text-dim);
+	transition: none;
 }
 
 .chamber.bullet-chamber::before {
-  content: '●';
-  color: var(--accent-red);
-  text-shadow: 0 0 15px var(--accent-red);
+	content: "●";
+	color: var(--accent-red);
+	text-shadow: 0 0 15px var(--accent-red);
 }
 
 .chamber.highlighted::before {
-  transform: scale(1.2);
+	transform: scale(1.2);
 }
 
 .revolver-result {
-  margin-top: 0;
-  min-height: auto;
+	margin-top: 0;
+	min-height: auto;
 }
 
 .result-text {
-  font-size: clamp(3rem, 8vw, 6rem);
-  font-weight: 900;
-  letter-spacing: clamp(8px, 1.5vw, 16px);
-  margin-bottom: 0.5rem;
-  animation: terminalBlink 0.15s steps(2) 4;
+	font-size: clamp(3rem, 8vw, 6rem);
+	font-weight: 900;
+	letter-spacing: clamp(8px, 1.5vw, 16px);
+	margin-bottom: 0.5rem;
+	animation: terminalBlink 0.15s steps(2) 4;
 }
 
 @keyframes terminalBlink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0;
+	}
 }
 
 .revolver-result.survived .result-text {
-  color: #0f0;
+	color: #0f0;
 }
 
 .revolver-result.died .result-text {
-  color: var(--accent-red);
-  animation: deathStatic 0.1s steps(3) 6;
+	color: var(--accent-red);
+	animation: deathStatic 0.1s steps(3) 6;
 }
 
 @keyframes deathStatic {
-  0% { opacity: 1; transform: translate(0, 0); }
-  33% { opacity: 0.8; transform: translate(-2px, 0); }
-  66% { opacity: 0.9; transform: translate(2px, 0); }
-  100% { opacity: 1; transform: translate(0, 0); }
+	0% {
+		opacity: 1;
+		transform: translate(0, 0);
+	}
+	33% {
+		opacity: 0.8;
+		transform: translate(-2px, 0);
+	}
+	66% {
+		opacity: 0.9;
+		transform: translate(2px, 0);
+	}
+	100% {
+		opacity: 1;
+		transform: translate(0, 0);
+	}
 }
 
 .result-odds {
-  font-size: clamp(1rem, 2vw, 1.5rem);
-  color: var(--text-dim);
-  letter-spacing: clamp(2px, 0.5vw, 6px);
-  margin-top: 0.5rem;
+	font-size: clamp(1rem, 2vw, 1.5rem);
+	color: var(--text-dim);
+	letter-spacing: clamp(2px, 0.5vw, 6px);
+	margin-top: 0.5rem;
 }

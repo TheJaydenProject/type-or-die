@@ -1,18 +1,19 @@
 {
-  "name": "type-or-die-monorepo",
-  "private": true,
-  "type": "module",
-  "workspaces": [
-    "shared",
-    "server",
-    "client"
-  ],
-  "scripts": {
-    "build:shared": "npm run build --workspace=@typeordie/shared",
-    "dev:shared": "npm run watch --workspace=@typeordie/shared",
-    "dev": "concurrently \"npm run dev --workspace=@typeordie/server\" \"npm run dev --workspace=client\""
-  },
-  "devDependencies": {
-    "concurrently": "^9.2.1"
-  }
+	"name": "type-or-die-monorepo",
+	"private": true,
+	"type": "module",
+	"workspaces": [
+		"shared",
+		"server",
+		"client"
+	],
+	"scripts": {
+		"build:shared": "npm run build --workspace=@typeordie/shared",
+		"dev:shared": "npm run watch --workspace=@typeordie/shared",
+		"dev": "concurrently \"npm run dev --workspace=@typeordie/server\" \"npm run dev --workspace=client\""
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.4.4",
+		"concurrently": "^9.2.1"
+	}
 }

@@ -1,79 +1,79 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { computed, ref } from "vue";
 
 const props = defineProps({
-  gameEndData: Object,
-  room: Object,
-  playerId: String,
-  sentences: Array
-})
+	gameEndData: Object,
+	room: Object,
+	playerId: String,
+	sentences: Array,
+});
 
-const emit = defineEmits(['mainMenu', 'replay'])
+const emit = defineEmits(["mainMenu", "replay"]);
 
-const activeTab = ref('leaderboard')
+const _activeTab = ref("leaderboard");
 
-const isValidSession = computed(() => {
-  return props.gameEndData && props.room && props.playerId
-})
+const _isValidSession = computed(() => {
+	return props.gameEndData && props.room && props.playerId;
+});
 
-const winnerId = computed(() => props.gameEndData?.winnerId)
-const finalStats = computed(() => props.gameEndData?.finalStats || {})
-const currentPlayer = computed(() => finalStats.value[props.playerId] || {})
+const winnerId = computed(() => props.gameEndData?.winnerId);
+const finalStats = computed(() => props.gameEndData?.finalStats || {});
+const currentPlayer = computed(() => finalStats.value[props.playerId] || {});
 
 const totalSentences = computed(() => {
-  return props.sentences?.length || props.room?.settings?.sentenceCount || 0
-})
+	return props.sentences?.length || props.room?.settings?.sentenceCount || 0;
+});
 
 /**
  * Grading system: S = completed all and survived, F = died, P = partial, - = spectator.
  */
-const grade = computed(() => {
-  const p = currentPlayer.value;
-  if (!p || !p.status || p.status === 'SPECTATOR') return '-';
+const _grade = computed(() => {
+	const p = currentPlayer.value;
+	if (!p || !p.status || p.status === "SPECTATOR") return "-";
 
-  if (p.status === 'DEAD') return 'F';
-  if (p.completedSentences >= totalSentences.value) return 'S';
-  return 'P';
+	if (p.status === "DEAD") return "F";
+	if (p.completedSentences >= totalSentences.value) return "S";
+	return "P";
 });
 
-const accuracy = computed(() => {
-  const p = currentPlayer.value
-  return p.totalTypedChars > 0
-    ? ((p.totalCorrectChars / p.totalTypedChars) * 100).toFixed(2)
-    : "0.00"
-})
+const _accuracy = computed(() => {
+	const p = currentPlayer.value;
+	return p.totalTypedChars > 0
+		? ((p.totalCorrectChars / p.totalTypedChars) * 100).toFixed(2)
+		: "0.00";
+});
 
 /**
  * Mirrors the checkGameOver() ranking logic in playerActionHandlers.ts.
  * Order: winner → alive → sentences desc → efficiency (correct - mistypes) desc → correct chars desc.
  */
-const sortedPlayers = computed(() => {
-  return Object.values(finalStats.value).sort((a, b) => {
-    if (a.id === winnerId.value) return -1
-    if (b.id === winnerId.value) return 1
+const _sortedPlayers = computed(() => {
+	return Object.values(finalStats.value).sort((a, b) => {
+		if (a.id === winnerId.value) return -1;
+		if (b.id === winnerId.value) return 1;
 
-    if (a.status === 'ALIVE' && b.status !== 'ALIVE') return -1
-    if (a.status !== 'ALIVE' && b.status === 'ALIVE') return 1
+		if (a.status === "ALIVE" && b.status !== "ALIVE") return -1;
+		if (a.status !== "ALIVE" && b.status === "ALIVE") return 1;
 
-    if (b.completedSentences !== a.completedSentences) {
-      return b.completedSentences - a.completedSentences
-    }
+		if (b.completedSentences !== a.completedSentences) {
+			return b.completedSentences - a.completedSentences;
+		}
 
-    const scoreA = a.totalCorrectChars - a.totalMistypes
-    const scoreB = b.totalCorrectChars - b.totalMistypes
-    if (scoreB !== scoreA) return scoreB - scoreA
+		const scoreA = a.totalCorrectChars - a.totalMistypes;
+		const scoreB = b.totalCorrectChars - b.totalMistypes;
+		if (scoreB !== scoreA) return scoreB - scoreA;
 
-    return b.totalCorrectChars - a.totalCorrectChars
-  })
-})
+		return b.totalCorrectChars - a.totalCorrectChars;
+	});
+});
 
-const rouletteHistoryReversed = computed(() => {
-  const history = currentPlayer.value.rouletteHistory || []
-  return [...history].reverse()
-})
+const _rouletteHistoryReversed = computed(() => {
+	const history = currentPlayer.value.rouletteHistory || [];
+	return [...history].reverse();
+});
 
-const onMainMenu = () => emit('mainMenu')
-const onReplay = () => emit('replay')
+const _onMainMenu = () => emit("mainMenu");
+const _onReplay = () => emit("replay");
 </script>
 
 <template>

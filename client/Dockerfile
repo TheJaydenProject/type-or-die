@@ -1,5 +1,5 @@
 # --- STAGE 1: BUILDER ---
-FROM node:18-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -8,32 +8,26 @@ COPY package.json package-lock.json ./
 COPY shared/package.json ./shared/
 COPY client/package.json ./client/
 
-# 2. Install dependencies (Root level to handle workspaces)
+# 2. Install dependencies
+# npm ci will now automatically pick the correct rollup binary 
+# based on the CPU architecture (ARM64 vs x64).
 RUN npm ci
 
-# 2.5 CRITICAL FIX: Manually install the Linux Musl binary for Rollup
-# This fixes the "Cannot find module @rollup/rollup-linux-x64-musl" error
-# common when building on Alpine from a Windows-generated lockfile.
-RUN npm install @rollup/rollup-linux-x64-musl --no-save
-
-# 3. Copy Source Code (Shared + Client)
+# 3. Copy Source Code
 COPY shared ./shared
 COPY client ./client
 
-# 4. Build Shared Library (Client depends on this)
-#    This generates the .d.ts files Vite needs
+# 4. Build Shared Library
 RUN npm run build --workspace=@typeordie/shared
 
 # 5. Build Client
-#    ARG declared here so Vite picks it up as an env var during build.
-#    docker-compose passes VITE_API_URL="" so the bundle uses same-origin (nginx proxy).
 ARG VITE_API_URL
 RUN npm run build --workspace=client
 
 # --- STAGE 2: SERVE ---
 FROM nginx:alpine
 
-# 6. Copy build output from the CLIENT workspace folder
+# 6. Copy build output
 COPY --from=builder /app/client/dist /usr/share/nginx/html
 
 # 7. Copy Nginx config

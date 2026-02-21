@@ -1,52 +1,52 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { PlayerState } from '@typeordie/shared'
+import type { PlayerState } from "@typeordie/shared";
+import { computed } from "vue";
 
 const props = defineProps<{
-  players: Record<string, PlayerState>
-  playerId: string
-  totalSentences: number
-  highlightedPlayerId?: string
-  onPlayerClick?: (id: string) => void
-}>()
+	players: Record<string, PlayerState>;
+	playerId: string;
+	totalSentences: number;
+	highlightedPlayerId?: string;
+	onPlayerClick?: (id: string) => void;
+}>();
 
 // Ranking: alive first → sentences desc → efficiency (correct - mistypes) desc → correct chars desc
-const sortedPlayers = computed(() => {
-  return Object.values(props.players).sort((a, b) => {
-    if (a.status === 'ALIVE' && b.status !== 'ALIVE') return -1
-    if (a.status !== 'ALIVE' && b.status === 'ALIVE') return 1
+const _sortedPlayers = computed(() => {
+	return Object.values(props.players).sort((a, b) => {
+		if (a.status === "ALIVE" && b.status !== "ALIVE") return -1;
+		if (a.status !== "ALIVE" && b.status === "ALIVE") return 1;
 
-    if (b.completedSentences !== a.completedSentences) {
-      return b.completedSentences - a.completedSentences
-    }
+		if (b.completedSentences !== a.completedSentences) {
+			return b.completedSentences - a.completedSentences;
+		}
 
-    const scoreA = a.totalCorrectChars - a.totalMistypes
-    const scoreB = b.totalCorrectChars - b.totalMistypes
+		const scoreA = a.totalCorrectChars - a.totalMistypes;
+		const scoreB = b.totalCorrectChars - b.totalMistypes;
 
-    if (scoreB !== scoreA) {
-      return scoreB - scoreA
-    }
+		if (scoreB !== scoreA) {
+			return scoreB - scoreA;
+		}
 
-    return b.totalCorrectChars - a.totalCorrectChars
-  })
-})
+		return b.totalCorrectChars - a.totalCorrectChars;
+	});
+});
 
-const currentPlayer = computed(() => props.players[props.playerId])
+const currentPlayer = computed(() => props.players[props.playerId]);
 
-const accuracy = computed(() => {
-  const p = currentPlayer.value
-  if (!p) return '100.0'
+const _accuracy = computed(() => {
+	const p = currentPlayer.value;
+	if (!p) return "100.0";
 
-  return p.totalTypedChars > 0
-    ? ((p.totalCorrectChars / p.totalTypedChars) * 100).toFixed(1)
-    : '100.0'
-})
+	return p.totalTypedChars > 0
+		? ((p.totalCorrectChars / p.totalTypedChars) * 100).toFixed(1)
+		: "100.0";
+});
 
-const handleEntryClick = (player: PlayerState) => {
-  if (props.onPlayerClick && player.status === 'ALIVE') {
-    props.onPlayerClick(player.id)
-  }
-}
+const _handleEntryClick = (player: PlayerState) => {
+	if (props.onPlayerClick && player.status === "ALIVE") {
+		props.onPlayerClick(player.id);
+	}
+};
 </script>
 
 <template>

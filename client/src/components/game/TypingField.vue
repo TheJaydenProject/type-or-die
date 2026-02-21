@@ -1,30 +1,32 @@
 <script setup>
-import { computed } from 'vue'
+import { computed } from "vue";
 
 const props = defineProps({
-  sentences: { type: Array, required: true },
-  currentSentenceIndex: { type: Number, default: 0 },
-  currentWordIndex: { type: Number, default: 0 },
-  currentCharInWord: { type: Number, default: 0 }
-})
+	sentences: { type: Array, required: true },
+	currentSentenceIndex: { type: Number, default: 0 },
+	currentWordIndex: { type: Number, default: 0 },
+	currentCharInWord: { type: Number, default: 0 },
+});
 
-const currentSentence = computed(() => props.sentences[props.currentSentenceIndex] || '')
-const words = computed(() => currentSentence.value.split(' '))
+const currentSentence = computed(
+	() => props.sentences[props.currentSentenceIndex] || "",
+);
+const _words = computed(() => currentSentence.value.split(" "));
 
-const getCharClass = (wordIdx, charIdx) => {
-  if (wordIdx < props.currentWordIndex) {
-    return 'char-done'
-  }
-  if (wordIdx === props.currentWordIndex) {
-    if (charIdx < props.currentCharInWord) return 'char-done'
-    if (charIdx === props.currentCharInWord) return 'char-current'
-  }
-  return 'char-pending'
-}
+const _getCharClass = (wordIdx, charIdx) => {
+	if (wordIdx < props.currentWordIndex) {
+		return "char-done";
+	}
+	if (wordIdx === props.currentWordIndex) {
+		if (charIdx < props.currentCharInWord) return "char-done";
+		if (charIdx === props.currentCharInWord) return "char-current";
+	}
+	return "char-pending";
+};
 
-const getSpaceClass = (wordIdx) => {
-  return wordIdx < props.currentWordIndex ? 'char-done' : 'char-pending'
-}
+const _getSpaceClass = (wordIdx) => {
+	return wordIdx < props.currentWordIndex ? "char-done" : "char-pending";
+};
 </script>
 
 <template>
