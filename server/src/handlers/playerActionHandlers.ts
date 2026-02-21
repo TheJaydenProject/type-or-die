@@ -315,6 +315,7 @@ async function processMistypeEvent(
 			currentWordIndex: 0,
 			currentCharInWord: 0,
 			mistakeStrikes: player.mistakeStrikes,
+			sentenceStartTime: resetStartTime,
 		});
 	}
 
@@ -372,6 +373,7 @@ async function processTimeoutEvent(
 		player.currentCharIndex = 0;
 		player.currentWordIndex = 0;
 		player.currentCharInWord = 0;
+		player.mistakeStrikes = 0;
 
 		player.rouletteOdds = Math.max(CONSTANTS.MIN_ROULETTE_ODDS, odds - 1);
 

@@ -254,6 +254,14 @@ const onPlayerProgress = (data) => {
 	if (players.value[data.playerId]) {
 		const currentP = players.value[data.playerId];
 
+		// Don't overwrite sentenceStartTime from server timestamps — the server clock
+		// may be skewed relative to the client, causing the timer to start at 17s
+		// instead of 20s. onPlayerStrike and onRouletteResult already set a fresh
+		// client-local Date.now(), so player_progress should never clobber it.
+		// The only exception is sentence completion (data.currentSentenceIndex changes),
+		// which is handled by onSentenceCompleted with its own sentenceStartTime.
+		const newSentenceStartTime = currentP.sentenceStartTime;
+
 		players.value[data.playerId] = {
 			...currentP,
 			currentCharIndex: data.currentCharIndex ?? currentP.currentCharIndex,
@@ -268,7 +276,7 @@ const onPlayerProgress = (data) => {
 			totalMistypes: data.totalMistypes ?? currentP.totalMistypes,
 			averageWPM: data.averageWPM ?? currentP.averageWPM,
 			status: data.status ?? currentP.status,
-			sentenceStartTime: data.sentenceStartTime ?? currentP.sentenceStartTime,
+			sentenceStartTime: newSentenceStartTime,
 		};
 	}
 
@@ -297,7 +305,9 @@ const onPlayerStrike = (data) => {
 		players.value[data.playerId] = {
 			...players.value[data.playerId],
 			mistakeStrikes: data.strikes,
-			sentenceStartTime: data.sentenceStartTime,
+			// Use client-local Date.now() rather than the server timestamp to avoid
+			// clock skew causing the timer to start partway through (e.g. 17s not 20s).
+			sentenceStartTime: Date.now(),
 			currentWordIndex: 0,
 			currentCharInWord: 0,
 			currentCharIndex: 0,
@@ -411,7 +421,7 @@ const onSentenceCompleted = (data) => {
 		const p = players.value[data.playerId];
 		p.completedSentences = (p.completedSentences || 0) + 1;
 		p.currentSentenceIndex = data.newSentenceIndex;
-		p.sentenceStartTime = data.sentenceStartTime;
+		p.sentenceStartTime = Date.now();
 		p.currentWordIndex = 0;
 		p.currentCharInWord = 0;
 		p.currentCharIndex = 0;
