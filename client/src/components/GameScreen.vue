@@ -36,12 +36,11 @@ const winnerAnnouncement = ref(null)
 
 const isHost = computed(() => props.room.hostId === props.playerId)
 
-// --- INITIALIZATION ---
 const initializePlayers = () => {
   const initialPlayers = {}
   Object.keys(props.room.players).forEach(pId => {
     const rawP = props.room.players[pId]
-    
+
     initialPlayers[pId] = {
       ...rawP,
       currentSentenceIndex: rawP.currentSentenceIndex || 0,
@@ -61,7 +60,7 @@ const initializePlayers = () => {
     }
   })
   players.value = initialPlayers
-  
+
   if (props.isSpectator) {
     const alivePlayers = Object.values(initialPlayers).filter(p => p.status === 'ALIVE')
     if (alivePlayers.length > 0) {
@@ -72,7 +71,6 @@ const initializePlayers = () => {
 
 initializePlayers()
 
-// --- COMPUTED HELPERS ---
 const currentPlayer = computed(() => players.value[props.playerId] || {})
 const status = computed(() => currentPlayer.value.status || 'ALIVE')
 
@@ -107,7 +105,6 @@ const currentWord = computed(() => {
   return words.value[currentWordIndex.value] || ''
 })
 
-// --- GAME ACTIONS ---
 const handleResetGame = () => {
   showAbortConfirm.value = true
 }
@@ -125,10 +122,9 @@ const cancelAbort = () => {
   showAbortConfirm.value = false
 }
 
-// --- UNIFIED GAME LOOP ---
 const startGameLoop = () => {
   if (gameLoopInterval) clearInterval(gameLoopInterval)
-  
+
   gameLoopInterval = setInterval(() => {
     const target = displayTarget.value
 
@@ -149,7 +145,7 @@ const startGameLoop = () => {
     }
 
     const elapsed = (Date.now() - startTime) / 1000
-    // Handle future timestamps from post-roulette buffer
+    // sentenceStartTime is set to a future timestamp post-roulette to grant a grace window
     const calculatedTime = elapsed < 0 ? 20 : Math.min(20, Math.max(0, 20 - elapsed))
 
     remainingTime.value = calculatedTime
@@ -165,17 +161,15 @@ const startGameLoop = () => {
   }, 100)
 }
 
-// --- WATCHERS ---
 watch(
-  [() => props.isSpectator, spectatingPlayerId], 
+  [() => props.isSpectator, spectatingPlayerId],
   () => {
-    // When we switch targets, immediately check if the new target 
+    // When we switch targets, immediately check if the new target
     // has an active roulette animation running
     syncRouletteUI()
   }
 )
 
-// --- INPUT HANDLING ---
 const handleKeyPress = (e) => {
   if (status.value !== 'ALIVE' || isProcessingError.value || props.isSpectator || isRouletteActive.value) return
 
@@ -192,7 +186,7 @@ const handleKeyPress = (e) => {
       if (currentWordIndex.value < _words.length - 1) {
         currentWordIndex.value++
         currentCharInWord.value = 0
-        
+
         props.socket.emit('char_typed', {
           roomCode: props.room.roomCode,
           char: ' ',
@@ -236,7 +230,6 @@ const triggerMistype = (typed, expected, charIndex) => {
   currentCharInWord.value = 0
 }
 
-// --- SOCKET HANDLERS ---
 const onPlayerProgress = (data) => {
   if (players.value[data.playerId]) {
     const currentP = players.value[data.playerId]
@@ -257,13 +250,11 @@ const onPlayerProgress = (data) => {
     }
   }
 
-  // 2. Force-Sync Local State (Anti-Softlock)
   if (data.playerId === props.playerId && !props.isSpectator) {
-    
-    // Safety check: Don't sync if server sent garbage
+
     if (typeof data.currentSentenceIndex === 'undefined') return;
 
-    const isDesynced = 
+    const isDesynced =
       currentSentenceIndex.value !== data.currentSentenceIndex ||
       currentWordIndex.value !== (data.currentWordIndex || 0) ||
       currentCharInWord.value !== (data.currentCharInWord || 0);
@@ -272,8 +263,8 @@ const onPlayerProgress = (data) => {
       currentSentenceIndex.value = data.currentSentenceIndex;
       currentWordIndex.value = data.currentWordIndex || 0;
       currentCharInWord.value = data.currentCharInWord || 0;
-      
-      isProcessingError.value = false; 
+
+      isProcessingError.value = false;
       showRoulette.value = false;
       isRouletteActive.value = false;
     }
@@ -290,7 +281,7 @@ const onPlayerStrike = (data) => {
       currentCharInWord: 0,
       currentCharIndex: 0
     }
-    
+
     if (data.playerId === props.playerId) {
       currentWordIndex.value = 0;
       currentCharInWord.value = 0;
@@ -307,7 +298,7 @@ const onPlayerStrike = (data) => {
 
 const syncRouletteUI = () => {
   const target = displayTarget.value
-  
+
   if (target && target.activeRoulette && target.activeRoulette.expiresAt > Date.now()) {
     rouletteResult.value = target.activeRoulette
     showRoulette.value = true
@@ -321,7 +312,7 @@ const syncRouletteUI = () => {
 
 const onRouletteResult = (data) => {
   if (players.value[data.playerId]) {
-    
+
     players.value[data.playerId] = {
       ...players.value[data.playerId],
       rouletteOdds: data.newOdds,
@@ -343,12 +334,12 @@ const onRouletteResult = (data) => {
       previousOdds: data.previousOdds || fallbackOdds,
       expiresAt: Date.now() + 5000
     }
-    
+
     if (data.survived) {
       players.value[data.playerId].sentenceStartTime = Date.now() + 5000;
     }
 
-    // Auto-clear the animation state after 5 seconds
+    // Must match the roulette animation duration so the overlay clears in sync
     setTimeout(() => {
       if (players.value[data.playerId]) {
         players.value[data.playerId].activeRoulette = null
@@ -365,7 +356,6 @@ const onRouletteResult = (data) => {
 }
 
 const onPlayerDied = (data) => {
-  // 1. Update the local data for the dying player
   if (players.value[data.playerId]) {
     players.value[data.playerId] = {
       ...players.value[data.playerId],
@@ -373,25 +363,23 @@ const onPlayerDied = (data) => {
     }
   }
 
-  // 2. AUTO-SWITCH LOGIC
   if (displayTarget.value && data.playerId === displayTarget.value.id) {
-    
+
     console.log(`TARGET [${data.playerId}] TERMINATED - Initiating Switch Protocol...`);
-    
+
     setTimeout(() => {
-      // Find all ALIVE players to switch to
       const alivePlayers = Object.values(players.value).filter(
         p => p.status === 'ALIVE' && p.id !== props.playerId
       );
-      
+
       if (alivePlayers.length > 0) {
-        // Sort by progress so we watch the leader
+        // Auto-follow the leader after the watched player dies
         alivePlayers.sort((a, b) => b.completedSentences - a.completedSentences);
-        
+
         console.log(`Switching camera to ${alivePlayers[0].nickname}`);
         spectatingPlayerId.value = alivePlayers[0].id;
       }
-    }, 4000); // 4 Second Mourning Period
+    }, 4000);
   }
 }
 
@@ -404,33 +392,28 @@ const onSentenceCompleted = (data) => {
     p.currentWordIndex = 0
     p.currentCharInWord = 0
     p.currentCharIndex = 0
-    
+
     players.value[data.playerId] = { ...p }
   }
 }
 
 const onGameEnded = (data) => {
   console.log('🏁 Game ended event received:', data)
-  
-  // Update stats first
+
   Object.keys(data.finalStats).forEach(pId => {
      if (players.value[pId]) {
        players.value[pId] = { ...players.value[pId], ...data.finalStats[pId] }
      }
   })
 
-  // 1. Victory Case (I won)
   if (data.winnerId === props.playerId && data.reason === 'COMPLETION') {
     showVictory.value = true
-  } 
-  // 2. Announcement Case (Someone else won)
-  else if (data.reason === 'COMPLETION') {
+  } else if (data.reason === 'COMPLETION') {
     const winner = players.value[data.winnerId]
     winnerAnnouncement.value = winner ? winner.nickname : 'UNKNOWN'
   }
 }
 
-// --- MOUNT & UNMOUNT ---
 onMounted(() => {
   document.addEventListener('keydown', handleKeyPress)
 
@@ -446,9 +429,9 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeyPress)
-  
+
   if (gameLoopInterval) clearInterval(gameLoopInterval)
-  
+
   props.socket.off('player_progress', onPlayerProgress)
   props.socket.off('player_strike', onPlayerStrike)
   props.socket.off('roulette_result', onRouletteResult)
@@ -464,13 +447,13 @@ const onLeaveClick = () => {
 
 <template>
   <div :key="flashKey" class="terminal" :class="{ 'flash': mistypeFlash }">
-    
+
     <div v-if="showAbortConfirm" class="confirm-overlay">
       <div class="confirm-dialog">
         <div class="confirm-title">ABORT MISSION?</div>
         <div class="confirm-message">
           This will stop the game for everyone and return to lobby.
-          
+
           Continue?
         </div>
         <div class="confirm-actions">
@@ -501,21 +484,21 @@ const onLeaveClick = () => {
 
     <div class="terminal-body">
       <div class="typing-zone">
-        
+
         <div v-if="displayTarget?.status === 'DEAD' && !showRoulette" class="death-screen">
           <div class="death-text">
             <p>{{ (isSpectator || displayTarget?.id !== playerId) ? 'SUBJECT TERMINATED' : 'YOU ARE DEAD' }}</p>
-            
+
             <p>FINAL: {{ displayTarget.completedSentences }}/{{ sentences.length }}</p>
-            
+
             <p class="death-sub">
               {{ (isSpectator || displayTarget?.id !== playerId) ? `[OBSERVING: ${displayTarget.nickname}]` : '[MISSION FAILED]' }}
             </p>
           </div>
         </div>
 
-        <div 
-          v-if="showVictory || (displayTarget?.completedSentences >= sentences.length)" 
+        <div
+          v-if="showVictory || (displayTarget?.completedSentences >= sentences.length)"
           class="victory-screen"
         >
           <div class="victory-text">
@@ -537,7 +520,7 @@ const onLeaveClick = () => {
         </div>
 
         <StatusHUD
-          :remainingTime="remainingTime" 
+          :remainingTime="remainingTime"
           :mistakeStrikes="displayTarget?.mistakeStrikes || 0"
           :currentSentenceIndex="displayTarget?.currentSentenceIndex || 0"
           :totalSentences="sentences.length"

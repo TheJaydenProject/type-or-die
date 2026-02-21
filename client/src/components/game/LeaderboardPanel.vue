@@ -10,19 +10,16 @@ const props = defineProps<{
   onPlayerClick?: (id: string) => void
 }>()
 
-// Sort players based on pure race metrics: Status -> Completion -> Correct Chars
+// Ranking: alive first → sentences desc → efficiency (correct - mistypes) desc → correct chars desc
 const sortedPlayers = computed(() => {
   return Object.values(props.players).sort((a, b) => {
-    // 1. Status (Alive first)
     if (a.status === 'ALIVE' && b.status !== 'ALIVE') return -1
     if (a.status !== 'ALIVE' && b.status === 'ALIVE') return 1
-    
-    // 2. Sentence Completion (Highest first)
+
     if (b.completedSentences !== a.completedSentences) {
       return b.completedSentences - a.completedSentences
     }
 
-    // 3. Efficiency Score (Correct - Mistakes)
     const scoreA = a.totalCorrectChars - a.totalMistypes
     const scoreB = b.totalCorrectChars - b.totalMistypes
 
@@ -30,25 +27,21 @@ const sortedPlayers = computed(() => {
       return scoreB - scoreA
     }
 
-    // 4. Tie-Breaker (Raw Speed)
     return b.totalCorrectChars - a.totalCorrectChars
   })
 })
 
-// Current player lookup
 const currentPlayer = computed(() => props.players[props.playerId])
 
-// Calculate accuracy for the stats panel
 const accuracy = computed(() => {
   const p = currentPlayer.value
   if (!p) return '100.0'
-  
-  return p.totalTypedChars > 0 
-    ? ((p.totalCorrectChars / p.totalTypedChars) * 100).toFixed(1) 
+
+  return p.totalTypedChars > 0
+    ? ((p.totalCorrectChars / p.totalTypedChars) * 100).toFixed(1)
     : '100.0'
 })
 
-// Handle click logic
 const handleEntryClick = (player: PlayerState) => {
   if (props.onPlayerClick && player.status === 'ALIVE') {
     props.onPlayerClick(player.id)
@@ -59,10 +52,10 @@ const handleEntryClick = (player: PlayerState) => {
 <template>
   <div class="leaderboard-zone">
     <div class="lb-header">LIVE RANKING</div>
-    
+
     <div class="lb-list">
-      <div 
-        v-for="(player, idx) in sortedPlayers" 
+      <div
+        v-for="(player, idx) in sortedPlayers"
         :key="player.id"
         class="lb-entry"
         :class="{
@@ -77,14 +70,14 @@ const handleEntryClick = (player: PlayerState) => {
           {{ idx + 1 }}. {{ player.nickname }}
           {{ player.status === 'DEAD' ? ' [KIA]' : '' }}
         </div>
-        
+
         <div class="lb-bar">
-          <div 
-            class="lb-fill" 
+          <div
+            class="lb-fill"
             :style="{ width: `${(player.completedSentences / totalSentences) * 100}%` }"
           ></div>
         </div>
-        
+
         <div class="lb-stats">
           <div class="stat-box">
             <span class="stat-label">PROGRESS</span>

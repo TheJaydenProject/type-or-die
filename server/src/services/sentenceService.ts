@@ -21,7 +21,7 @@ class SentenceService {
     const query = `
       SELECT text
       FROM sentences TABLESAMPLE BERNOULLI(10)
-      WHERE 
+      WHERE
         is_active = TRUE
         AND language = 'en'
         AND contains_emoji = FALSE
@@ -32,14 +32,13 @@ class SentenceService {
 
     try {
       const result = await db.query(query, [count]);
-      
-      // Fallback: If Bernoulli sampling yields insufficient rows (common in small tables),
-      // force a standard full-table scan.
+
+      // Bernoulli sampling can yield insufficient rows on small tables; fall back to full scan
       if (result.rows.length < count) {
         const fallbackQuery = `
           SELECT text
           FROM sentences
-          WHERE 
+          WHERE
             is_active = TRUE
             AND language = 'en'
             AND contains_emoji = FALSE
@@ -48,13 +47,13 @@ class SentenceService {
           LIMIT $1
         `;
         const fallbackResult = await db.query(fallbackQuery, [count]);
-        
+
         if (fallbackResult.rows.length < count) {
           throw new Error(
             `Insufficient sentences in pool. Need ${count}, got ${fallbackResult.rows.length}`
           );
         }
-        
+
         const sentences = fallbackResult.rows.map((row: any) => row.text);
         console.log(`Used fallback query for ${sentences.length} sentences`);
         return sentences;
@@ -63,11 +62,10 @@ class SentenceService {
       const sentences = result.rows.map((row: any) => row.text);
 
       console.log(`Selected ${sentences.length} random sentences`);
-      // Debug logging for sample verification
       if (sentences.length > 0) {
         console.log(`   Sample: "${sentences[0]}" ... "${sentences[sentences.length - 1]}"`);
       }
-      
+
       return sentences;
 
     } catch (error: any) {
@@ -78,29 +76,27 @@ class SentenceService {
 
   validateSentence(text: string): SentenceValidationResult {
     const errors: string[] = [];
-    
-    // Normalize spaces
+
     const words = text.trim().split(/\s+/);
-    
+
     if (words.length < 5 || words.length > 10) {
       errors.push(`Word count ${words.length} not in range [5,10]`);
     }
-    
+
     if (text.length > 100) {
       errors.push(`Sentence too long: ${text.length} chars`);
     }
-    
-    // Strict alphanumeric check + basic punctuation
+
     if (!/^[a-zA-Z0-9\s.,!?'-]+$/.test(text)) {
       errors.push('Non-English characters detected');
     }
-    
-    // Basic emoji range check
+
+    // Unicode emoji ranges aren't caught by the alphanumeric check above
     const emojiRegex = /[\u{1F600}-\u{1F64F}]/u;
     if (emojiRegex.test(text)) {
       errors.push('Emoji detected');
     }
-    
+
     return {
       valid: errors.length === 0,
       errors: errors,
@@ -111,7 +107,7 @@ class SentenceService {
 
   async getPoolStats(): Promise<any> {
     const query = `
-      SELECT 
+      SELECT
         COUNT(*) as total,
         AVG(word_count)::int as avg_words,
         AVG(char_count)::int as avg_chars,
