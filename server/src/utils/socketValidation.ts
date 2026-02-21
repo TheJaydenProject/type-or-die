@@ -29,6 +29,7 @@ const SAFE_USER_ERRORS = new Set([
 	"No session found",
 	"Not in a room",
 	"Need at least 1 player",
+	"Insufficient sentences in pool",
 	"Invalid data format",
 	"Invalid player ID",
 	"Invalid sentence index",

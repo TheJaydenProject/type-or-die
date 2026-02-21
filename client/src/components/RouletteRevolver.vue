@@ -12,7 +12,7 @@ const phase = ref("spinning");
 const currentHighlight = ref(null);
 const cylinder = ref(null);
 
-const _chambers = computed(() => {
+const chambers = computed(() => {
 	return Array.from({ length: props.previousOdds }, (_, i) => ({
 		isBullet: i === 0,
 		index: i,

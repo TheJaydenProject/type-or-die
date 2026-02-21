@@ -6,6 +6,10 @@ import {
 	shouldAdvanceWord,
 	validateChar,
 } from "./game/GameController.js";
+import LeaderboardPanel from "./game/LeaderboardPanel.vue";
+import StatusHUD from "./game/StatusHUD.vue";
+import TypingField from "./game/TypingField.vue";
+import RouletteRevolver from "./RouletteRevolver.vue";
 
 const props = defineProps({
 	socket: { type: Object, required: true },
@@ -35,7 +39,7 @@ const showVictory = ref(false);
 const showAbortConfirm = ref(false);
 const winnerAnnouncement = ref(null);
 
-const _isHost = computed(() => props.room.hostId === props.playerId);
+const isHost = computed(() => props.room.hostId === props.playerId);
 
 const initializePlayers = () => {
 	const initialPlayers = {};
@@ -77,7 +81,7 @@ initializePlayers();
 const currentPlayer = computed(() => players.value[props.playerId] || {});
 const status = computed(() => currentPlayer.value.status || "ALIVE");
 
-const _spectatorTarget = computed(() => {
+const spectatorTarget = computed(() => {
 	if (spectatingPlayerId.value) {
 		return players.value[spectatingPlayerId.value] || null;
 	}
@@ -96,7 +100,7 @@ const displayTarget = computed(() => {
 	return players.value[props.playerId];
 });
 
-const _currentSentence = computed(() => {
+const currentSentence = computed(() => {
 	const raw = props.sentences[currentSentenceIndex.value] || [];
 	return Array.isArray(raw) ? raw.join(" ") : raw;
 });
@@ -110,11 +114,11 @@ const currentWord = computed(() => {
 	return words.value[currentWordIndex.value] || "";
 });
 
-const _handleResetGame = () => {
+const handleResetGame = () => {
 	showAbortConfirm.value = true;
 };
 
-const _confirmAbort = () => {
+const confirmAbort = () => {
 	props.socket.emit(
 		"force_reset_game",
 		{ roomCode: props.room.roomCode },
@@ -127,7 +131,7 @@ const _confirmAbort = () => {
 	showAbortConfirm.value = false;
 };
 
-const _cancelAbort = () => {
+const cancelAbort = () => {
 	showAbortConfirm.value = false;
 };
 
@@ -459,7 +463,7 @@ onUnmounted(() => {
 	props.socket.off("game_ended", onGameEnded);
 });
 
-const _onLeaveClick = () => {
+const onLeaveClick = () => {
 	emit("leave");
 };
 </script>

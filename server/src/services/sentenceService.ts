@@ -54,9 +54,7 @@ class SentenceService {
 				const fallbackResult = await db.query(fallbackQuery, [count]);
 
 				if (fallbackResult.rows.length < count) {
-					throw new Error(
-						`Insufficient sentences in pool. Need ${count}, got ${fallbackResult.rows.length}`,
-					);
+					throw new Error("Insufficient sentences in pool");
 				}
 
 				const sentences = fallbackResult.rows.map(

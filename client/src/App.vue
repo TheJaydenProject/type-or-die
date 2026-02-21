@@ -1,6 +1,8 @@
 <script setup>
 import { io } from "socket.io-client";
 import { onMounted, onUnmounted, ref, watch } from "vue";
+import GameEndScreen from "./components/GameEndScreen.vue";
+import GameScreen from "./components/GameScreen.vue";
 
 // --- 1. STATE MANAGEMENT ---
 // Initialize socket outside to keep it singleton
@@ -38,7 +40,7 @@ const handleGameEnded = (data) => {
 
 	setTimeout(() => {
 		view.value = "FINISHED";
-	}, 6200);
+	}, 4500);
 };
 
 // Helper: Handle player death
@@ -249,7 +251,7 @@ watch(connected, (isConnected) => {
 
 // --- 5. ACTION HANDLERS ---
 
-const _handleCreateRoom = () => {
+const handleCreateRoom = () => {
 	if (!nickname.value.trim()) {
 		error.value = "ERROR: NICKNAME REQUIRED";
 		return;
@@ -288,7 +290,7 @@ const _handleCreateRoom = () => {
 	);
 };
 
-const _handleJoinRoom = () => {
+const handleJoinRoom = () => {
 	if (!nickname.value.trim()) {
 		error.value = "ERROR: NICKNAME REQUIRED";
 		return;
@@ -335,7 +337,7 @@ const _handleJoinRoom = () => {
 	);
 };
 
-const _handleLeaveRoom = () => {
+const handleLeaveRoom = () => {
 	if (currentRoom.value) {
 		socket.emit("leave_room", { roomCode: currentRoom.value.roomCode });
 		localStorage.removeItem("type_or_die_session");
@@ -350,7 +352,7 @@ const _handleLeaveRoom = () => {
 	}
 };
 
-const _handleChangeSentences = (value) => {
+const handleChangeSentences = (value) => {
 	if (currentRoom.value && currentRoom.value.hostId === playerId.value) {
 		// Optimistic update
 		currentRoom.value.settings.sentenceCount = value;
@@ -370,7 +372,7 @@ const _handleChangeSentences = (value) => {
 	}
 };
 
-const _copyRoomCode = () => {
+const copyRoomCode = () => {
 	if (currentRoom.value) {
 		navigator.clipboard.writeText(currentRoom.value.roomCode);
 		error.value = "ROOM CODE COPIED TO CLIPBOARD";
@@ -378,7 +380,7 @@ const _copyRoomCode = () => {
 	}
 };
 
-const _handleStartGame = () => {
+const handleStartGame = () => {
 	if (currentRoom.value && currentRoom.value.hostId === playerId.value) {
 		loading.value = true;
 		socket.emit(
@@ -394,7 +396,7 @@ const _handleStartGame = () => {
 	}
 };
 
-const _handleKickPlayer = (targetPlayerId) => {
+const handleKickPlayer = (targetPlayerId) => {
 	socket.emit("kick_player", { targetPlayerId }, (response) => {
 		if (!response.success) {
 			error.value = `ERROR: ${response.error.toUpperCase()}`;
@@ -403,7 +405,7 @@ const _handleKickPlayer = (targetPlayerId) => {
 };
 
 // Handlers for End Screen interaction
-const _onMainMenu = () => {
+const onMainMenu = () => {
 	if (currentRoom.value) {
 		socket.emit("leave_room", { roomCode: currentRoom.value.roomCode }); //
 	}
@@ -417,7 +419,7 @@ const _onMainMenu = () => {
 	view.value = "MENU";
 };
 
-const _onReplay = () => {
+const onReplay = () => {
 	if (currentRoom.value && currentRoom.value.hostId === playerId.value) {
 		socket.emit(
 			"request_replay",

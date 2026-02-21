@@ -11,7 +11,7 @@ const props = defineProps<{
 }>();
 
 // Ranking: alive first → sentences desc → efficiency (correct - mistypes) desc → correct chars desc
-const _sortedPlayers = computed(() => {
+const sortedPlayers = computed(() => {
 	return Object.values(props.players).sort((a, b) => {
 		if (a.status === "ALIVE" && b.status !== "ALIVE") return -1;
 		if (a.status !== "ALIVE" && b.status === "ALIVE") return 1;
@@ -33,7 +33,7 @@ const _sortedPlayers = computed(() => {
 
 const currentPlayer = computed(() => props.players[props.playerId]);
 
-const _accuracy = computed(() => {
+const accuracy = computed(() => {
 	const p = currentPlayer.value;
 	if (!p) return "100.0";
 
@@ -42,7 +42,7 @@ const _accuracy = computed(() => {
 		: "100.0";
 });
 
-const _handleEntryClick = (player: PlayerState) => {
+const handleEntryClick = (player: PlayerState) => {
 	if (props.onPlayerClick && player.status === "ALIVE") {
 		props.onPlayerClick(player.id);
 	}

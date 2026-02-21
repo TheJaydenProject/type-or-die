@@ -11,9 +11,9 @@ const props = defineProps({
 const currentSentence = computed(
 	() => props.sentences[props.currentSentenceIndex] || "",
 );
-const _words = computed(() => currentSentence.value.split(" "));
+const words = computed(() => currentSentence.value.split(" "));
 
-const _getCharClass = (wordIdx, charIdx) => {
+const getCharClass = (wordIdx, charIdx) => {
 	if (wordIdx < props.currentWordIndex) {
 		return "char-done";
 	}
@@ -24,7 +24,7 @@ const _getCharClass = (wordIdx, charIdx) => {
 	return "char-pending";
 };
 
-const _getSpaceClass = (wordIdx) => {
+const getSpaceClass = (wordIdx) => {
 	return wordIdx < props.currentWordIndex ? "char-done" : "char-pending";
 };
 </script>

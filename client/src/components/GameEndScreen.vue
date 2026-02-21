@@ -10,9 +10,9 @@ const props = defineProps({
 
 const emit = defineEmits(["mainMenu", "replay"]);
 
-const _activeTab = ref("leaderboard");
+const activeTab = ref("leaderboard");
 
-const _isValidSession = computed(() => {
+const isValidSession = computed(() => {
 	return props.gameEndData && props.room && props.playerId;
 });
 
@@ -27,7 +27,7 @@ const totalSentences = computed(() => {
 /**
  * Grading system: S = completed all and survived, F = died, P = partial, - = spectator.
  */
-const _grade = computed(() => {
+const grade = computed(() => {
 	const p = currentPlayer.value;
 	if (!p || !p.status || p.status === "SPECTATOR") return "-";
 
@@ -36,7 +36,7 @@ const _grade = computed(() => {
 	return "P";
 });
 
-const _accuracy = computed(() => {
+const accuracy = computed(() => {
 	const p = currentPlayer.value;
 	return p.totalTypedChars > 0
 		? ((p.totalCorrectChars / p.totalTypedChars) * 100).toFixed(2)
@@ -47,7 +47,7 @@ const _accuracy = computed(() => {
  * Mirrors the checkGameOver() ranking logic in playerActionHandlers.ts.
  * Order: winner → alive → sentences desc → efficiency (correct - mistypes) desc → correct chars desc.
  */
-const _sortedPlayers = computed(() => {
+const sortedPlayers = computed(() => {
 	return Object.values(finalStats.value).sort((a, b) => {
 		if (a.id === winnerId.value) return -1;
 		if (b.id === winnerId.value) return 1;
@@ -67,13 +67,13 @@ const _sortedPlayers = computed(() => {
 	});
 });
 
-const _rouletteHistoryReversed = computed(() => {
+const rouletteHistoryReversed = computed(() => {
 	const history = currentPlayer.value.rouletteHistory || [];
 	return [...history].reverse();
 });
 
-const _onMainMenu = () => emit("mainMenu");
-const _onReplay = () => emit("replay");
+const onMainMenu = () => emit("mainMenu");
+const onReplay = () => emit("replay");
 </script>
 
 <template>
