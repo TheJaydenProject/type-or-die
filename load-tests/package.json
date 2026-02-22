@@ -1,0 +1,20 @@
+{
+	"name": "load-tests",
+	"version": "1.0.0",
+	"description": "",
+	"main": "index.js",
+	"scripts": {
+		"build": "tsc loadtest.ts --module commonjs --target es2020 --esModuleInterop --skipLibCheck",
+		"start": "npm run build && node loadtest.js",
+		"start:local": "TARGET_URL=http://localhost:4900 npm run build && TARGET_URL=http://localhost:4900 node loadtest.js"
+	},
+	"keywords": [],
+	"author": "",
+	"license": "ISC",
+	"type": "commonjs",
+	"dependencies": {
+		"socket.io-client": "^4.8.3",
+		"ts-node": "^10.9.2",
+		"typescript": "^5.9.3"
+	}
+}

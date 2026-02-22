@@ -1,5 +1,6 @@
-<!-- Improved compatibility of back to top link: See: https://github.com/othneildrew/Best-README-Template/pull/73 -->
 <a id="readme-top"></a>
+
+<div align="center">
 
 [![Contributors][contributors-shield]][contributors-url]
 [![Forks][forks-shield]][forks-url]
@@ -7,9 +8,6 @@
 [![Issues][issues-shield]][issues-url]
 [![MIT License][license-shield]][license-url]
 
-<!-- PROJECT LOGO -->
-<br />
-<div align="center">
   <h3 align="center">Type or Die</h3>
 
   <p align="center">
@@ -19,375 +17,256 @@
     <br />
     <br />
     <a href="https://github.com/thejaydenproject/type-or-die/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
-    ·
-    <a href="https://github.com/thejaydenproject/type-or-die/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
   </p>
 </div>
 
-<!-- TABLE OF CONTENTS -->
 <details>
   <summary>Table of Contents</summary>
   <ol>
     <li>
       <a href="#about-the-project">About The Project</a>
       <ul>
-        <li><a href="#game-overview">Game Overview</a></li>
-        <li><a href="#built-with">Built With</a></li>
+        <li><a href="#tech-stack">Tech Stack</a></li>
       </ul>
     </li>
+    <li><a href="#getting-started">Getting Started</a></li>
+    <li><a href="#project-structure">Project Structure</a></li>
     <li>
       <a href="#architecture">Architecture</a>
       <ul>
         <li><a href="#system-design">System Design</a></li>
-        <li><a href="#data-flow">Data Flow</a></li>
-        <li><a href="#performance-optimizations">Performance Optimizations</a></li>
+        <li><a href="#data-flow--state-management">Data Flow & State Management</a></li>
+        <li><a href="#performance--reliability">Performance & Reliability</a></li>
       </ul>
     </li>
-    <li>
-      <a href="#getting-started">Getting Started</a>
-      <ul>
-        <li><a href="#prerequisites">Prerequisites</a></li>
-        <li><a href="#installation">Installation</a></li>
-      </ul>
-    </li>
-    <li><a href="#usage">Usage</a></li>
-    <li><a href="#testing">Testing</a></li>
-    <li><a href="#roadmap">Roadmap</a></li>
-    <li><a href="#contributing">Contributing</a></li>
+    <li><a href="#load-testing">Load Testing</a></li>
+    <li><a href="#known-issues">Known Issues</a></li>
     <li><a href="#license">License</a></li>
     <li><a href="#contact">Contact</a></li>
     <li><a href="#acknowledgments">Acknowledgments</a></li>
   </ol>
 </details>
 
-<!-- ABOUT THE PROJECT -->
 ## About The Project
 
-Type or Die is a high-stakes multiplayer typing game that combines competitive typing mechanics with Russian roulette-style survival gameplay. Players race against time to type randomly generated sentences while managing a three-strike error system. Each third mistake triggers a roulette spin where death becomes increasingly likely as the game progresses.
+Type or Die is a high-stakes multiplayer typing game combining competitive typing with Russian roulette mechanics. Players race to type randomly generated sentences within a 20-second window. A three-strike error system triggers a roulette spin, where death probability increases as the game progresses.
 
-### Game Overview
+**Key Features:**
+* **Risk/Reward Mechanics**: Survival odds start at 1/6 and improve with survival, creating dynamic tension.
+* **Real-time Sync**: Supports up to 16 concurrent players with live state synchronization.
+* **Difficulty Progression**: Sentences are split 20% Easy, 50% Medium, 30% Hard and served in order so games ramp up naturally.
+* **Spectator Mode**: Eliminated players and late joiners can observe active matches.
+* **Graceful Reconnection**: A 5-second grace period allows players to resume sessions after a disconnect.
 
-**Core Mechanics**
+### Tech Stack
 
-The game implements a tension-driven progression system where typing accuracy and speed determine survival. Players must complete sentences within a 20-second window while avoiding mistakes. The mistake tolerance system creates strategic depth through progressive difficulty scaling.
-
-**Three-Strike System**
-
-Players accumulate strikes for typing errors. Upon reaching three strikes, the roulette mechanism activates. Initial survival odds start at 1/6 (one bullet, six chambers) and improve with each survived spin, creating a dynamic risk-reward balance that intensifies as players progress.
-
-**Multiplayer Dynamics**
-
-Real-time competitive gameplay supports up to 16 simultaneous players per room. The system tracks live progress, typing statistics, and player elimination in real-time. Spectator mode allows eliminated players and late joiners to observe ongoing matches without disrupting gameplay.
-
-**Victory Conditions**
-
-Games conclude when either all players are eliminated (last survivor wins) or a player completes all assigned sentences (completion victory). Final statistics include typing speed, accuracy metrics, completed sentences, and roulette survival history.
-
-**Session Management**
-
-Players can create or join rooms using six-character codes. Room hosts control game settings including sentence count (5-100 sentences). The system implements automatic reconnection for disconnected players with a 30-second grace period during active gameplay.
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-### Built With
+**Monorepo Shared**
+* **TypeScript**: Strict type safety shared across full stack.
 
 **Frontend**
-
-* React 19 - UI framework for component-based architecture
-* Socket.IO Client - WebSocket communication with fallback support
-* Zustand - Lightweight state management
-* Vite - Build tool and development server
-* CSS3 - Custom terminal-inspired styling with animations
+* **Vue 3** & **Vite**.
+* **Socket.IO Client** for event-driven updates.
+* **CSS3** with a brutalist terminal aesthetic.
 
 **Backend**
-
-* Node.js - JavaScript runtime environment
-* Express - HTTP server and API routing
-* Socket.IO - Real-time bidirectional event-based communication
-* Redis - In-memory data store for room state and session management
-* PostgreSQL - Relational database for sentence storage
-* IORedis - Redis client with Lua scripting support
+* **Node.js (ESM)** & **Express**.
+* **Redis (ioredis)** for room state, session management, and atomic locking.
+* **PostgreSQL** for persistent sentence storage.
+* **Lua Scripts** for atomic gameplay logic within Redis.
 
 **Infrastructure**
-
-* Docker - Containerization platform
-* Docker Compose - Multi-container orchestration
-* Nginx - Reverse proxy and static file serving
-
-**Development Tools**
-
-* ESLint - Code quality and consistency enforcement
-* Nodemon - Development server auto-reload
-* Concurrently - Parallel script execution
+* **Docker** & **Docker Compose**.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-<!-- ARCHITECTURE -->
-## Architecture
-
-### System Design
-
-**Client Architecture**
-
-The frontend implements a single-page application with real-time state synchronization. Component hierarchy separates concerns between game logic, UI rendering, and network communication. State management handles player progress, room status, and typing validation without prop drilling.
-
-**Server Architecture**
-
-The backend follows a modular handler-based pattern separating connection lifecycle, room management, game flow, and player actions. Each handler manages specific aspects of game state while maintaining loose coupling through the Socket.IO event system.
-
-**Database Layer**
-
-PostgreSQL stores the sentence pool with metadata including word count, character count, difficulty rating, language, and emoji flags. The sentence service implements efficient random selection using TABLESAMPLE for large datasets with fallback to standard randomization.
-
-**Cache Layer**
-
-Redis serves as the primary data store for active game state. Room data, player statistics, and session information persist in memory with TTL-based expiration. The system uses Redis locks to prevent race conditions during concurrent state modifications.
-
-### Data Flow
-
-**Room Creation Flow**
-
-Client requests room creation with host nickname and settings. Server validates global room limits and per-IP restrictions. Atomic Lua scripts register room creation in IP tracking. Server generates unique six-character room code and initializes room state in Redis. Host receives room code and joins via Socket.IO room channel.
-
-**Gameplay Flow**
-
-Players emit character typed events containing character, index, and timestamp. Server validates character against expected sentence position using atomic Lua scripts. On correct input, server updates player progress and broadcasts to all room members. On incorrect input, server increments strike counter and resets sentence progress. Third strike triggers roulette mechanism with cryptographically random chamber selection.
-
-**State Synchronization**
-
-All players in a room receive real-time updates via Socket.IO broadcasts. Progress events include character index, sentence index, WPM calculations, and accuracy metrics. Strike events reset timers and update UI indicators. Roulette events display animated chamber selection and survival results. Game end events compile final statistics and transition all players to results screen.
-
-**Reconnection Flow**
-
-Disconnected players enter 30-second grace period with DISCONNECTED status. Room state persists during grace period maintaining player progress. Reconnection attempts validate session against stored player data. Successful reconnection restores player state and resumes gameplay. Expired grace periods trigger permanent player removal and potential host migration.
-
-### Performance Optimizations
-
-**Atomic Operations**
-
-Critical game logic executes in Redis Lua scripts to ensure atomicity. Character validation, room registration, and lock management run server-side to prevent race conditions. Scripts reduce network round-trips by combining multiple operations into single atomic transactions.
-
-**Event Rate Limiting**
-
-Per-player event rate limiting prevents spam and DOS attacks. System tracks event counts with sliding window reset. Limits apply to all player action events including character typing and mistake reporting.
-
-**Connection Pooling**
-
-PostgreSQL connection pool maintains 5-20 active connections. Pool configuration includes aggressive timeouts to prevent zombie connections. Redis connection uses single persistent client with automatic reconnection strategy.
-
-**Efficient Queries**
-
-Sentence selection uses TABLESAMPLE for O(1) random sampling on large tables. Query filters apply before sampling to reduce scan overhead. Fallback query handles edge cases with small datasets.
-
-**Memory Management**
-
-Rate limit data cleanup runs every 60 seconds removing stale player records. Inactive room cleanup runs every 5 minutes removing rooms exceeding 1-hour inactivity threshold. TTL-based Redis expiration provides automatic memory reclamation.
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-<!-- GETTING STARTED -->
 ## Getting Started
 
 ### Prerequisites
+* Docker & Docker Compose
+* Node.js 22+ (for local dev without Docker)
 
-The following software must be installed on your development machine:
+### Run with Docker (recommended)
 
-* Docker (version 20.10 or higher)
-* Docker Compose (version 2.0 or higher)
-* Node.js (version 18 or higher, for local development)
-* npm (comes bundled with Node.js)
-
-### Installation
-
-**Using Docker Compose (Recommended)**
-
-Clone the repository to your local machine
-
-```sh
-git clone https://github.com/thejaydenproject/type-or-die.git
-cd type-or-die
+```bash
+docker compose -f docker-compose.local.yml up -d
 ```
 
-Create the PostgreSQL initialization file
+| Service | URL |
+|---|---|
+| Frontend | http://localhost:8080 |
+| Backend | http://localhost:4900 |
 
-```sh
-touch init-sentences-db.sql
-```
+> After making code changes, rebuild and restart everything with:
+> ```bash
+> docker compose -f docker-compose.local.yml down; docker compose -f docker-compose.local.yml up --build -d
+> ```
 
-Populate the database initialization file with your sentence data following the schema defined in the sentence service. The file should create the sentences table and insert initial data.
+### Run without Docker (local dev)
 
-Start all services using Docker Compose
+Requires Postgres and Redis running locally. Then:
 
-```sh
-docker-compose -f docker-compose.local.yml up -d
-```
-
-Access the application at http://localhost:8080
-
-**Local Development Setup**
-
-Clone the repository
-
-```sh
-git clone https://github.com/thejaydenproject/type-or-die.git
-cd type-or-die
-```
-
-Install server dependencies
-
-```sh
+```bash
 npm install
+npm run dev
 ```
 
-Install client dependencies
+This runs the server and client in parallel via `concurrently`. Client runs on `:5173`, server on `:3001`.
 
-```sh
-cd client
-npm install
-cd ..
-```
+### Environment variables
 
-Configure environment variables by creating a .env file in the project root with the following variables:
+Copy these into a `.env` at the project root for local dev:
 
-```
+```env
+PORT=3001
+NODE_ENV=development
+CLIENT_URL=http://localhost:5173
+
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=typeordie_dev
 DB_USER=devuser
 DB_PASSWORD=devpass123
+
 REDIS_HOST=localhost
 REDIS_PORT=6379
 REDIS_PASSWORD=localdevpassword
-PORT=3001
-CLIENT_URL=http://localhost:5173
+
+JWT_SECRET=local-dev-jwt-secret-change-me-12345
+SESSION_SECRET=local-dev-session-secret-not-secure-12345
+
+MAX_ROOMS_PER_IP=15
+MAX_GLOBAL_ROOMS=100
+MAX_ROOM_CREATIONS_PER_HOUR=20
+DEFAULT_TIME_PER_SENTENCE=20
+MAX_WPM_THRESHOLD=200
+DISCONNECT_GRACE_PERIOD_MS=5000
+ROOM_TTL_SECONDS=3600
 ```
 
-Start Redis and PostgreSQL services using Docker
+### Linting & formatting
 
-```sh
-docker-compose -f docker-compose.local.yml up -d redis postgres
+This project uses [Biome](https://biomejs.dev/). Run from the root:
+
+```bash
+npx biome check .        # check for issues
+npx biome check --write .  # auto-fix
 ```
 
-Start the development servers
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-```sh
-npm run dev:all
+## Project Structure
+
+```
+type-or-die/
+├── client/          # Vue 3 frontend (Vite)
+├── server/          # Node.js + Socket.IO backend
+│   └── src/
+│       ├── handlers/        # Socket event handlers
+│       ├── services/        # roomManager, sentenceService
+│       ├── lua/             # Atomic Redis Lua scripts
+│       └── utils/
+├── shared/          # Shared TypeScript types (monorepo)
+├── load-tests/      # Load test suite
+├── init-sentences-db.sql   # DB schema + seed data (not tracked, see below)
+└── docker-compose.local.yml
 ```
 
-Access the application at http://localhost:5173
+**Key server files:**
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+| File | Purpose |
+|---|---|
+| `handlers/gameFlowHandlers.ts` | Countdown, game start/end |
+| `handlers/playerActionHandlers.ts` | Typing input, mistype, timeout |
+| `handlers/roomLifecycleHandlers.ts` | Room create/join/leave/settings |
+| `services/roomManager.ts` | Room state, distributed locking, janitor |
+| `services/sentenceService.ts` | Sentence fetching by difficulty tier |
+| `lua/atomicCharUpdate.lua` | Atomic char validation + WPM calc in Redis |
 
-<!-- USAGE -->
-## Usage
+### Database seed file
 
-**Creating a Game**
+`init-sentences-db.sql` is not tracked in this repo (the sentence pool is private). You need to create it yourself at the root before running Docker. The schema must match exactly:
 
-Enter your desired nickname in the operator name field. Select sentence count using the slider (5-100 sentences in increments of 5). Click CREATE ROOM to generate a new game room. Share the displayed six-character room code with other players.
+```sql
+CREATE TABLE IF NOT EXISTS sentences (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  text VARCHAR(500) NOT NULL,
+  word_count INTEGER NOT NULL CHECK (word_count BETWEEN 8 AND 12),
+  char_count INTEGER NOT NULL,
+  language VARCHAR(10) DEFAULT 'en' CHECK (language = 'en'),
+  contains_emoji BOOLEAN DEFAULT FALSE CHECK (contains_emoji = FALSE),
+  difficulty VARCHAR(20) DEFAULT 'MEDIUM',
+  tags TEXT[],
+  created_at TIMESTAMP DEFAULT NOW(),
+  is_active BOOLEAN DEFAULT TRUE,
+  death_rate FLOAT DEFAULT 0.0,
+  average_time FLOAT,
+  CONSTRAINT unique_sentence UNIQUE(text)
+);
 
-**Joining a Game**
+CREATE INDEX IF NOT EXISTS idx_word_count ON sentences(word_count);
+CREATE INDEX IF NOT EXISTS idx_active ON sentences(is_active) WHERE is_active = TRUE;
+CREATE INDEX IF NOT EXISTS idx_difficulty ON sentences(difficulty);
+CREATE INDEX IF NOT EXISTS idx_death_rate ON sentences(death_rate);
 
-Enter your nickname in the operator name field. Enter the six-character room code provided by the host. Click JOIN ROOM to enter the game lobby. Wait for the host to start the game or observe if joining during active gameplay.
-
-**Gameplay**
-
-Type the displayed sentence exactly as shown including capitalization and punctuation. Complete each sentence within the 20-second time limit. Mistakes reset your progress on the current sentence and add one strike. Three strikes trigger the roulette mechanism where survival becomes a game of chance. Continue typing sentences until either completing all assigned sentences or being eliminated.
-
-**Host Controls**
-
-Room hosts can adjust sentence count before starting the game. Hosts can reset the game during active play to return all players to the lobby. Only hosts can initiate game start countdown.
-
-**Results Screen**
-
-View your final grade based on accuracy (SS/S/A/B/C/F rating system). Review detailed statistics including completion rate, accuracy percentage, average WPM, and total errors. Compare performance against other players on the ranking tab. Examine your typing history with per-sentence metrics on the logs tab. Review all roulette events and survival outcomes on the casualty tab. Return to lobby for another game or exit to main menu.
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-<!-- TESTING -->
-## Testing
-
-**Running the Test Suite**
-
-The project includes a comprehensive Docker-based test suite covering infrastructure validation, Socket.IO communication, game logic, and room management.
-
-Execute the complete test suite
-
-```sh
-docker-compose -f docker-compose.local.yml down -v
-docker-compose -f docker-compose.local.yml --profile test up --build test
+-- Add your sentences here. You need at minimum:
+-- 20% EASY, 50% MEDIUM, 30% HARD to match the game's difficulty split.
+-- Each sentence: 8-12 words, no apostrophes, ends with a period.
+-- Only . , - punctuation allowed.
+INSERT INTO sentences (text, word_count, char_count, difficulty, tags, language)
+VALUES
+  ('The dog ran across the open green field.', 8, 41, 'EASY', '{nature}', 'en'),
+  ('She left her bag near the front door.', 8, 37, 'EASY', '{everyday}', 'en');
+  -- ... add more sentences
 ```
 
-**Test Coverage**
-
-Infrastructure Tests verify Redis connectivity, PostgreSQL connectivity, sentence database population, and query functionality.
-
-Socket.IO Tests validate connection establishment, room creation, room joining, settings modification, game start mechanics, and countdown behavior.
-
-Game Logic Tests confirm character validation, player progress tracking, mistake handling, sentence completion, and timeout mechanics.
-
-Room Manager Tests ensure atomic room registration, global room counting, Redis persistence, IP-based rate limiting, and room cleanup on disconnection.
-
-**Interpreting Results**
-
-Test output displays real-time progress with pass/fail indicators. Summary statistics show total tests, passed tests, and failed tests. Failed tests include detailed error messages explaining the failure reason. Exit code 0 indicates all tests passed. Exit code 1 indicates one or more test failures.
+The file is automatically run by Docker on first postgres startup via the volume mount in `docker-compose.local.yml`.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-<!-- ROADMAP -->
-## Roadmap
+## Architecture
 
-**Planned Features**
+### System Design
+The project is organized as a **TypeScript Monorepo** using npm workspaces.
+* **`@typeordie/shared`**: Central source of truth for interfaces and Socket.IO protocols.
+* **`@typeordie/server`**: Uses a handler-based pattern to decouple socket events from business logic.
+* **`@typeordie/client`**: Separates typing logic (`GameController.js`) from the Vue rendering layer.
 
-- [ ] Status Effects System
-  - [ ] Temporary typing modifiers (slowdown, reverse controls, hidden text)
-  - [ ] Positive buffs (shield, time extension, strike removal)
-  - [ ] Player-activated abilities with cooldowns
+### Data Flow & State Management
 
-- [ ] Enhanced Player Interaction
-  - [ ] Sabotage mechanics (deploy status effects on opponents)
-  - [ ] Power-up collection from completing sentences
-  - [ ] Team-based modes (cooperative survival, relay typing)
-  - [ ] Voting system for sentence difficulty adjustment
+* **Atomic Input Processing**: Character validation is processed via a **Redis Lua script** (`atomicCharUpdate.lua`). This calculates WPM and advancements in a single atomic step to prevent race conditions.
+* **Concurrency Control**: Room states are protected by a **distributed locking mechanism** in `roomManager.ts`.
+* **Event Pipeline**: Player actions are managed through a **Promise-based Event Queue** to ensure sequential execution.
 
-- [ ] Additional Game Modes
-  - [ ] Speed mode (shorter time limits, faster progression)
-  - [ ] Endurance mode (unlimited sentences, survival time competition)
-  - [ ] Practice mode (solo play with performance tracking)
-  - [ ] Tournament brackets (automated elimination rounds)
-
-- [ ] UI/UX Improvements
-  - [ ] Customizable themes and color schemes
-  - [ ] Sound effects and audio feedback
-  - [ ] Replay system for completed games
-  - [ ] Detailed statistics dashboard
-
-See the [open issues](https://github.com/thejaydenproject/type-or-die/issues) for a full list of proposed features and known issues.
+### Performance & Reliability
+* **Sentence Selection**: `sentenceService.ts` runs 3 parallel queries (one per difficulty tier) with `ORDER BY RANDOM()` to serve a fresh, balanced set each game.
+* **Rate Limiting**: Integrated **IP-based room registration** and event rate limits protect against server abuse.
+* **Janitor Service**: Background processes in `roomManager.ts` automatically clean up inactive rooms and orphaned IP tracking.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-<!-- CONTRIBUTING -->
-## Contributing
+## Load Testing
 
-Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
+Simulates 16 players at ~140 WPM with random disconnects. See `testing.md` for full details.
 
-If you have a suggestion that would make this better, please fork the repo and create a pull request. You can also simply open an issue with the tag "enhancement".
+```powershell
+cd load-tests
+$env:TARGET_URL="http://localhost:4900"; npx ts-node loadtest.ts
+```
 
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-<!-- LICENSE -->
+## Known Issues
+
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 ## License
 
 Distributed under the MIT License. See `LICENSE` for more information.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-<!-- CONTACT -->
 ## Contact
 
 Jayden Wong - [@thejaydenproject](https://github.com/thejaydenproject)
@@ -396,18 +275,12 @@ Project Link: [https://github.com/thejaydenproject/type-or-die](https://github.c
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-<!-- ACKNOWLEDGMENTS -->
 ## Acknowledgments
 
-* [Socket.IO Documentation](https://socket.io/docs/)
-* [Redis Documentation](https://redis.io/documentation)
-* [React Documentation](https://react.dev/)
-* [Docker Documentation](https://docs.docker.com/)
-* [Best README Template](https://github.com/othneildrew/Best-README-Template)
+* Inspired by **Final Sentence** on Steam.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-<!-- MARKDOWN LINKS & IMAGES -->
 [contributors-shield]: https://img.shields.io/github/contributors/thejaydenproject/type-or-die.svg?style=for-the-badge
 [contributors-url]: https://github.com/thejaydenproject/type-or-die/graphs/contributors
 [forks-shield]: https://img.shields.io/github/forks/thejaydenproject/type-or-die.svg?style=for-the-badge

@@ -35,7 +35,7 @@ services:
       context: .
       dockerfile: server/Dockerfile
     ports:
-      - "3001:3001"
+      - "4900:3001"
     environment:
       DATABASE_URL: postgresql://devuser:devpass123@postgres:5432/typeordie_dev
       REDIS_URL: redis://:localdevpassword@redis:6379
@@ -47,11 +47,11 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: localdevpassword
-      JWT_SECRET: local-dev-jwt-secret-change-me
+      JWT_SECRET: local-dev-jwt-secret-change-me-12345
       PORT: 3001
       NODE_ENV: development
       CLIENT_URL: http://localhost:8080
-      SESSION_SECRET: local-dev-session-secret
+      SESSION_SECRET: local-dev-session-secret-not-secure-12345
       MAX_ROOMS_PER_IP: 15
       MAX_GLOBAL_ROOMS: 100
       MAX_ROOM_CREATIONS_PER_HOUR: 20
@@ -74,7 +74,11 @@ services:
       retries: 5
 
   frontend:
-    build: ./client
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+      args:
+        VITE_API_URL: ""
     ports:
       - "8080:80"
     depends_on:
@@ -83,37 +87,6 @@ services:
     networks:
       - app-network
 
-  # Test service - runs comprehensive test suite
-  test:
-    build:
-      context: .
-      dockerfile: server/Dockerfile.test
-    environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: typeordie_dev
-      DB_USER: devuser
-      DB_PASSWORD: devpass123
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: localdevpassword
-      SERVER_URL: http://backend:3001
-      # ADD THESE:
-      MAX_ROOMS_PER_IP: 50 
-      MAX_GLOBAL_ROOMS: 1000
-      ROOM_TTL_SECONDS: 3600
-    depends_on:
-      backend:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
-    networks:
-      - app-network
-    command: node src/test-suite-docker.js
-    profiles:
-      - test
 
 volumes:
   redis-data:
