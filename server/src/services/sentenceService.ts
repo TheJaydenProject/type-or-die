@@ -22,10 +22,9 @@ interface SentenceValidationResult {
 
 class SentenceService {
 	async selectSentences(count: number): Promise<string[]> {
-		// Split count by difficulty: 20% EASY, 30% HARD, remainder to MEDIUM
-		const easyCount = Math.floor(count * 0.2);
-		const hardCount = Math.floor(count * 0.3);
-		const mediumCount = count - easyCount - hardCount;
+		// Split count by difficulty: 30% EASY, remainder to MEDIUM (no HARD)
+		const easyCount = Math.floor(count * 0.3);
+		const mediumCount = count - easyCount;
 
 		const baseWhere = `
 			is_active = TRUE
@@ -50,17 +49,16 @@ class SentenceService {
 		};
 
 		try {
-			const [easy, medium, hard] = await Promise.all([
+			const [easy, medium] = await Promise.all([
 				fetchByDifficulty("EASY", easyCount),
 				fetchByDifficulty("MEDIUM", mediumCount),
-				fetchByDifficulty("HARD", hardCount),
 			]);
 
-			// Order: easy first, then medium, then hard
-			const all = [...easy, ...medium, ...hard];
+			// Order: easy first, then medium
+			const all = [...easy, ...medium];
 
 			console.log(
-				`Selected ${all.length} sentences (${easyCount} easy, ${mediumCount} medium, ${hardCount} hard)`,
+				`Selected ${all.length} sentences (${easyCount} easy, ${mediumCount} medium)`,
 			);
 			return all;
 		} catch (error) {
