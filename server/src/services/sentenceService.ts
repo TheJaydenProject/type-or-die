@@ -33,13 +33,18 @@ class SentenceService {
 			AND contains_emoji = FALSE
 		`;
 
-		const fetchByDifficulty = async (difficulty: string, limit: number): Promise<string[]> => {
+		const fetchByDifficulty = async (
+			difficulty: string,
+			limit: number,
+		): Promise<string[]> => {
 			const result = await db.query(
 				`SELECT text FROM sentences WHERE ${baseWhere} AND difficulty = $1 ORDER BY RANDOM() LIMIT $2`,
 				[difficulty, limit],
 			);
 			if (result.rows.length < limit) {
-				throw new Error(`Insufficient ${difficulty} sentences in pool (need ${limit}, got ${result.rows.length})`);
+				throw new Error(
+					`Insufficient ${difficulty} sentences in pool (need ${limit}, got ${result.rows.length})`,
+				);
 			}
 			return result.rows.map((row: SentenceRow) => row.text);
 		};
@@ -54,7 +59,9 @@ class SentenceService {
 			// Order: easy first, then medium, then hard
 			const all = [...easy, ...medium, ...hard];
 
-			console.log(`Selected ${all.length} sentences (${easyCount} easy, ${mediumCount} medium, ${hardCount} hard)`);
+			console.log(
+				`Selected ${all.length} sentences (${easyCount} easy, ${mediumCount} medium, ${hardCount} hard)`,
+			);
 			return all;
 		} catch (error) {
 			console.error(
