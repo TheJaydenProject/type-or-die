@@ -146,8 +146,9 @@ async function processCharTypedEvent(
 				},
 			});
 		} else {
-			io.to(roomCode).emit("player_progress", {
+			io.to(roomCode).emit("sentence_completed", {
 				playerId,
+				newSentenceIndex: player.currentSentenceIndex,
 				...player,
 			});
 		}

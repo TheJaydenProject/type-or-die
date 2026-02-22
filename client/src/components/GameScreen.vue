@@ -428,6 +428,13 @@ const onSentenceCompleted = (data) => {
 
 		players.value[data.playerId] = { ...p };
 	}
+
+	if (data.playerId === props.playerId && !props.isSpectator) {
+		currentSentenceIndex.value = data.newSentenceIndex;
+		currentWordIndex.value = 0;
+		currentCharInWord.value = 0;
+		isProcessingError.value = false;
+	}
 };
 
 const onGameEnded = (data) => {

@@ -22,58 +22,40 @@ interface SentenceValidationResult {
 
 class SentenceService {
 	async selectSentences(count: number): Promise<string[]> {
-		// TABLESAMPLE BERNOULLI is efficient for large tables but imprecise for small ones
-		const query = `
-      SELECT text
-      FROM sentences TABLESAMPLE BERNOULLI(10)
-      WHERE
-        is_active = TRUE
-        AND language = 'en'
-        AND contains_emoji = FALSE
-        AND word_count BETWEEN 5 AND 10
-      ORDER BY RANDOM()
-      LIMIT $1
-    `;
+		// Split count by difficulty: 20% EASY, 30% HARD, remainder to MEDIUM
+		const easyCount = Math.floor(count * 0.2);
+		const hardCount = Math.floor(count * 0.3);
+		const mediumCount = count - easyCount - hardCount;
+
+		const baseWhere = `
+			is_active = TRUE
+			AND language = 'en'
+			AND contains_emoji = FALSE
+		`;
+
+		const fetchByDifficulty = async (difficulty: string, limit: number): Promise<string[]> => {
+			const result = await db.query(
+				`SELECT text FROM sentences WHERE ${baseWhere} AND difficulty = $1 ORDER BY RANDOM() LIMIT $2`,
+				[difficulty, limit],
+			);
+			if (result.rows.length < limit) {
+				throw new Error(`Insufficient ${difficulty} sentences in pool (need ${limit}, got ${result.rows.length})`);
+			}
+			return result.rows.map((row: SentenceRow) => row.text);
+		};
 
 		try {
-			const result = await db.query(query, [count]);
+			const [easy, medium, hard] = await Promise.all([
+				fetchByDifficulty("EASY", easyCount),
+				fetchByDifficulty("MEDIUM", mediumCount),
+				fetchByDifficulty("HARD", hardCount),
+			]);
 
-			// Bernoulli sampling can yield insufficient rows on small tables; fall back to full scan
-			if (result.rows.length < count) {
-				const fallbackQuery = `
-          SELECT text
-          FROM sentences
-          WHERE
-            is_active = TRUE
-            AND language = 'en'
-            AND contains_emoji = FALSE
-            AND word_count BETWEEN 5 AND 10
-          ORDER BY RANDOM()
-          LIMIT $1
-        `;
-				const fallbackResult = await db.query(fallbackQuery, [count]);
+			// Order: easy first, then medium, then hard
+			const all = [...easy, ...medium, ...hard];
 
-				if (fallbackResult.rows.length < count) {
-					throw new Error("Insufficient sentences in pool");
-				}
-
-				const sentences = fallbackResult.rows.map(
-					(row: SentenceRow) => row.text,
-				);
-				console.log(`Used fallback query for ${sentences.length} sentences`);
-				return sentences;
-			}
-
-			const sentences = result.rows.map((row: SentenceRow) => row.text);
-
-			console.log(`Selected ${sentences.length} random sentences`);
-			if (sentences.length > 0) {
-				console.log(
-					`   Sample: "${sentences[0]}" ... "${sentences[sentences.length - 1]}"`,
-				);
-			}
-
-			return sentences;
+			console.log(`Selected ${all.length} sentences (${easyCount} easy, ${mediumCount} medium, ${hardCount} hard)`);
+			return all;
 		} catch (error) {
 			console.error(
 				"Error selecting sentences:",
