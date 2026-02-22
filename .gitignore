@@ -6,6 +6,7 @@ node_modules/
 dist/
 **/dist/
 .cache/
+*.tsbuildinfo
 
 # Environment & Secrets
 .env

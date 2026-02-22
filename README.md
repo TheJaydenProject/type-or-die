@@ -167,7 +167,7 @@ type-or-die/
 │       └── utils/
 ├── shared/          # Shared TypeScript types (monorepo)
 ├── load-tests/      # Load test suite
-├── init-sentences-db.sql   # DB schema + seed data
+├── init-sentences-db.sql   # DB schema + seed data (not tracked, see below)
 └── docker-compose.local.yml
 ```
 
@@ -181,6 +181,45 @@ type-or-die/
 | `services/roomManager.ts` | Room state, distributed locking, janitor |
 | `services/sentenceService.ts` | Sentence fetching by difficulty tier |
 | `lua/atomicCharUpdate.lua` | Atomic char validation + WPM calc in Redis |
+
+### Database seed file
+
+`init-sentences-db.sql` is not tracked in this repo (the sentence pool is private). You need to create it yourself at the root before running Docker. The schema must match exactly:
+
+```sql
+CREATE TABLE IF NOT EXISTS sentences (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  text VARCHAR(500) NOT NULL,
+  word_count INTEGER NOT NULL CHECK (word_count BETWEEN 8 AND 12),
+  char_count INTEGER NOT NULL,
+  language VARCHAR(10) DEFAULT 'en' CHECK (language = 'en'),
+  contains_emoji BOOLEAN DEFAULT FALSE CHECK (contains_emoji = FALSE),
+  difficulty VARCHAR(20) DEFAULT 'MEDIUM',
+  tags TEXT[],
+  created_at TIMESTAMP DEFAULT NOW(),
+  is_active BOOLEAN DEFAULT TRUE,
+  death_rate FLOAT DEFAULT 0.0,
+  average_time FLOAT,
+  CONSTRAINT unique_sentence UNIQUE(text)
+);
+
+CREATE INDEX IF NOT EXISTS idx_word_count ON sentences(word_count);
+CREATE INDEX IF NOT EXISTS idx_active ON sentences(is_active) WHERE is_active = TRUE;
+CREATE INDEX IF NOT EXISTS idx_difficulty ON sentences(difficulty);
+CREATE INDEX IF NOT EXISTS idx_death_rate ON sentences(death_rate);
+
+-- Add your sentences here. You need at minimum:
+-- 20% EASY, 50% MEDIUM, 30% HARD to match the game's difficulty split.
+-- Each sentence: 8-12 words, no apostrophes, ends with a period.
+-- Only . , - punctuation allowed.
+INSERT INTO sentences (text, word_count, char_count, difficulty, tags, language)
+VALUES
+  ('The dog ran across the open green field.', 8, 41, 'EASY', '{nature}', 'en'),
+  ('She left her bag near the front door.', 8, 37, 'EASY', '{everyday}', 'en');
+  -- ... add more sentences
+```
+
+The file is automatically run by Docker on first postgres startup via the volume mount in `docker-compose.local.yml`.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -214,15 +253,6 @@ cd load-tests
 $env:TARGET_URL="http://localhost:4900"; npx ts-node loadtest.ts
 ```
 
-### Integration test suite
-
-Runs a suite of automated socket-level tests against a live stack:
-
-```bash
-docker compose -f docker-compose.local.yml --profile test run test
-```
-
-Tests cover: room creation, joining, game flow, sentence completion, roulette, reconnection, and rate limiting.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

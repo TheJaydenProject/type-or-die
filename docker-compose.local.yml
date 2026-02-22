@@ -87,36 +87,6 @@ services:
     networks:
       - app-network
 
-  # Test service - runs comprehensive test suite
-  test:
-    build:
-      context: .
-      dockerfile: server/Dockerfile.test
-    environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: typeordie_dev
-      DB_USER: devuser
-      DB_PASSWORD: devpass123
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: localdevpassword
-      SERVER_URL: http://backend:3001
-      MAX_ROOMS_PER_IP: 50 
-      MAX_GLOBAL_ROOMS: 1000
-      ROOM_TTL_SECONDS: 3600
-    depends_on:
-      backend:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
-    networks:
-      - app-network
-    command: node src/test-suite-docker.js
-    profiles:
-      - test
 
 volumes:
   redis-data:
