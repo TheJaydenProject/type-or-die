@@ -4,7 +4,9 @@
 	"description": "",
 	"main": "index.js",
 	"scripts": {
-		"test": "echo \"Error: no test specified\" && exit 1"
+		"build": "tsc loadtest.ts --module commonjs --target es2020 --esModuleInterop --skipLibCheck",
+		"start": "npm run build && node loadtest.js",
+		"start:local": "TARGET_URL=http://localhost:4900 npm run build && TARGET_URL=http://localhost:4900 node loadtest.js"
 	},
 	"keywords": [],
 	"author": "",
