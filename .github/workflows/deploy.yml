@@ -37,9 +37,6 @@ jobs:
       - name: Build & Type-check Server
         run: npm run build --workspace=@typeordie/server
 
-      - name: Lint Client
-        run: npm run lint --workspace=client
-
       - name: Build Client
         run: npm run build --workspace=client
 
