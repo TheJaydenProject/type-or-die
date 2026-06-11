@@ -1,0 +1,108 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: ["main"]
+    paths-ignore:
+      - "**.md"
+      - "LICENSE"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-type-or-die
+  cancel-in-progress: false
+
+jobs:
+  build-and-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Lint & Format Check (Biome)
+        run: npx @biomejs/biome check ./server ./client ./shared
+
+      - name: Build Shared
+        run: npm run build --workspace=@typeordie/shared
+
+      - name: Build & Type-check Server
+        run: npm run build --workspace=@typeordie/server
+
+      - name: Lint Client
+        run: npm run lint --workspace=client
+
+      - name: Build Client
+        run: npm run build --workspace=client
+
+  deploy:
+    needs: build-and-check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Prepare Staging Directory
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            rm -rf ~/deploy_staging_tod
+            mkdir -p ~/deploy_staging_tod
+
+      - name: Copy Source to Staging
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          source: "client,server,shared,package.json,package-lock.json"
+          target: "/home/ubuntu/deploy_staging_tod"
+          strip_components: 0
+
+      - name: Sync, Build & Restart
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            set -e
+
+            echo "Syncing source code (preserving .env, docker-compose.yml, init-sentences-db.sql, volumes)..."
+            rsync -a --delete --exclude='.env' --exclude='node_modules' --exclude='dist' ~/deploy_staging_tod/client/ ~/type-or-die/client/
+            rsync -a --delete --exclude='.env' --exclude='node_modules' --exclude='dist' ~/deploy_staging_tod/server/ ~/type-or-die/server/
+            rsync -a --delete --exclude='.env' --exclude='node_modules' --exclude='dist' ~/deploy_staging_tod/shared/ ~/type-or-die/shared/
+            cp ~/deploy_staging_tod/package.json ~/deploy_staging_tod/package-lock.json ~/type-or-die/
+
+            echo "Building images..."
+            cd ~/type-or-die
+            docker compose build backend frontend
+
+            echo "Restarting containers (no volume wipe)..."
+            docker compose up -d --remove-orphans
+
+            echo "Verifying container health..."
+            sleep 5
+            RUNNING=$(docker compose ps --status running -q | wc -l)
+            if [ "$RUNNING" -ge 4 ]; then
+              echo "Deployment successful! ($RUNNING/4 containers running)"
+              docker ps | grep type-or-die
+              rm -rf ~/deploy_staging_tod
+            else
+              echo "Deployment failed! Only $RUNNING/4 expected containers running."
+              docker compose ps
+              exit 1
+            fi
+
+            echo "DEPLOYMENT COMPLETE"
