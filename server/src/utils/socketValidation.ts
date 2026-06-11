@@ -29,7 +29,6 @@ const SAFE_USER_ERRORS = new Set([
 	"No session found",
 	"Not in a room",
 	"Need at least 1 player",
-	"Insufficient sentences in pool",
 	"Invalid data format",
 	"Invalid player ID",
 	"Invalid sentence index",
@@ -37,8 +36,13 @@ const SAFE_USER_ERRORS = new Set([
 ]);
 
 export function safeErrorMessage(err: unknown): string {
-	if (err instanceof Error && SAFE_USER_ERRORS.has(err.message)) {
-		return err.message;
+	if (err instanceof Error) {
+		if (SAFE_USER_ERRORS.has(err.message)) {
+			return err.message;
+		}
+		if (err.message.startsWith("Insufficient ")) {
+			return err.message;
+		}
 	}
 	return "An internal error occurred";
 }
