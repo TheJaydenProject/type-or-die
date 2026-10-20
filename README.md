@@ -24,7 +24,6 @@ Play it at [typeordie.org](https://typeordie.org/). Found a bug?
 - [Testing](#testing)
 - [Troubleshooting](#troubleshooting)
 - [Known issues](#known-issues)
-- [Documentation drift found in the previous README](#documentation-drift-found-in-the-previous-readme)
 - [License](#license)
 
 </details>
@@ -130,7 +129,7 @@ uppercase labels, and a high-contrast palette (`client/src/App.css`).
 |---|---|
 | Real-time sync | Up to 16 concurrent players per room, live state over Socket.IO |
 | Risk mechanic | 3 strikes triggers a roulette roll; odds start at 1/6, floor at 1/2 |
-| Difficulty ramp | Sentences served easy-first, then medium (see [difficulty note](#documentation-drift-found-in-the-previous-readme)) |
+| Difficulty ramp | Sentences served easy-first, then medium |
 | Spectators | Eliminated players and late joiners watch the match live |
 | Reconnection | A disconnect grace period lets a player resume their session |
 | Host controls | Kick, change sentence count, reset, and replay |
@@ -385,7 +384,7 @@ From `server/src/utils/socketValidation.ts`:
 | `COUNTDOWN_DURATION` | 3000 ms | Pre-game countdown |
 | `ROULETTE_ANIMATION_MS` | 5000 ms | Roulette animation / death delay |
 | `GAME_DURATION_TIMEOUT` | 20000 ms | Sentence time window |
-| `DISCONNECT_GRACE_PERIOD` | 30000 ms | Reconnect window (see note below) |
+| `DISCONNECT_GRACE_PERIOD` | 30000 ms | Reconnect window (effective value) |
 | `MAX_NICKNAME_LENGTH` | 20 | Nickname cap |
 
 ### Configuration
@@ -405,7 +404,7 @@ Environment variables (root `.env`; see `.env` in the repo for current values):
 | `MAX_ROOM_CREATIONS_PER_HOUR` | Room creation rate limit |
 | `DEFAULT_TIME_PER_SENTENCE` | Sentence time window |
 | `MAX_WPM_THRESHOLD` | WPM ceiling |
-| `DISCONNECT_GRACE_PERIOD_MS` | Reconnect window (env; not read by code, see note) |
+| `DISCONNECT_GRACE_PERIOD_MS` | Reconnect window (env; not read by code) |
 | `ROOM_TTL_SECONDS` | Redis room expiry |
 
 ### Health check
@@ -512,20 +511,6 @@ These are real limitations visible in the code, not a wish list.
   wire the env var up or remove it.
 - **No real accounts.** Players are guests (`isGuest: true`); there is no login, so
   per-user history is not durable.
-
----
-
-## Documentation drift found in the previous README
-
-Two claims in the earlier README did not match the code. Both are corrected above:
-
-1. **Difficulty split.** The README said "20% Easy, 50% Medium, 30% Hard".
-   `sentenceService.selectSentences` actually requests 30% EASY and 70% MEDIUM,
-   with a comment stating no HARD tier is used.
-2. **Reconnect grace period.** The README said "5-second grace period".
-   `CONSTANTS.DISCONNECT_GRACE_PERIOD` is 30000 ms (30 seconds). The env var
-   `DISCONNECT_GRACE_PERIOD_MS` (set to 5000) is not read by the server, so the
-   effective window is 30 seconds.
 
 ---
 
