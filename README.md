@@ -9,7 +9,7 @@ TypeScript monorepo.
 Play it at [typeordie.org](https://typeordie.org/). Found a bug?
 [Report it](https://github.com/TheJaydenProject/type-or-die/issues/new).
 
-<details>
+<details open>
   <summary>Table of contents</summary>
 
 - [Run it](#run-it)
