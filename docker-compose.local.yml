@@ -1,7 +1,7 @@
 services:
   redis:
     image: redis:7-alpine
-    command: redis-server --requirepass localdevpassword
+    command: redis-server --requirepass localdevpassword --appendonly yes
     ports:
       - "6379:6379"
     volumes:
@@ -57,7 +57,7 @@ services:
       MAX_ROOM_CREATIONS_PER_HOUR: 20
       DEFAULT_TIME_PER_SENTENCE: 30
       MAX_WPM_THRESHOLD: 200
-      DISCONNECT_GRACE_PERIOD_MS: 5000
+      DISCONNECT_GRACE_PERIOD_MS: 30000
       ROOM_TTL_SECONDS: 3600
     depends_on:
       postgres:

@@ -253,10 +253,9 @@ Rationale that is not recorded anywhere in the repository is labelled **inferred
   character event per keystroke per player). Redis gives sub-millisecond reads and
   writes, native TTL expiry, and atomic scripts, none of which a per-keystroke
   SQL write path matches. `[inferred: no ADR found in the repo]`
-- **Trade-off:** room state is ephemeral. There is no AOF/RDB persistence
-  configured in `docker-compose.local.yml`, so a Redis restart drops in-progress
-  rooms. Acceptable for casual matches; a problem for anything that must survive a
-  restart.
+- **Trade-off:** room state is in-memory and short-lived. AOF persistence is now
+  enabled (`--appendonly yes`), so a restart replays the append log and in-progress
+  rooms survive; a crash between fsyncs can still lose up to the last second.
 - **Objection:** "Why not just use Postgres for everything and skip Redis?"
   **Answer:** a row lock and JSON round-trip per keystroke across 16 players cannot
   hold the latency budget; Redis is the state store and Postgres is the durable
@@ -313,9 +312,10 @@ Rationale that is not recorded anywhere in the repository is labelled **inferred
 - **Why this one:** the pool is durable, larger than memory-friendly to hand-edit,
   and queried by indexed columns (`difficulty`, `is_active`). Postgres fits a
   read-mostly, low-write dataset.
-- **Trade-off:** `ORDER BY RANDOM()` is a full scan per query, which does not scale
-  to a very large table. Fine at the current pool size; the first thing to revisit
-  if the pool grows to millions of rows.
+- **Trade-off:** random selection avoids `ORDER BY RANDOM()` by sampling after a
+  random UUID boundary over the primary key, so the cost is roughly
+  `O(log n + k)` rather than a full scan and sort. It relies on `id` being a random
+  UUID (`gen_random_uuid()`); a non-random id scheme would bias the sample.
 
 ### One shared package defines the socket contract
 
@@ -411,7 +411,7 @@ From `server/src/utils/socketValidation.ts`:
 | `COUNTDOWN_DURATION` | 3000 ms | Pre-game countdown |
 | `ROULETTE_ANIMATION_MS` | 5000 ms | Roulette animation / death delay |
 | `GAME_DURATION_TIMEOUT` | 20000 ms | Sentence time window |
-| `DISCONNECT_GRACE_PERIOD` | 30000 ms | Reconnect window (effective value) |
+| `DISCONNECT_GRACE_PERIOD` | 30000 ms | Reconnect window, from `DISCONNECT_GRACE_PERIOD_MS` |
 | `MAX_NICKNAME_LENGTH` | 20 | Nickname cap |
 
 ### Configuration
@@ -431,7 +431,7 @@ Environment variables (root `.env`; see `.env` in the repo for current values):
 | `MAX_ROOM_CREATIONS_PER_HOUR` | Room creation rate limit |
 | `DEFAULT_TIME_PER_SENTENCE` | Sentence time window |
 | `MAX_WPM_THRESHOLD` | WPM ceiling |
-| `DISCONNECT_GRACE_PERIOD_MS` | Reconnect window (env; not read by code) |
+| `DISCONNECT_GRACE_PERIOD_MS` | Reconnect grace window in ms (default 30000) |
 | `ROOM_TTL_SECONDS` | Redis room expiry |
 
 ### Health check
@@ -525,17 +525,6 @@ above 95%, zero errors, and the backend still running.
 
 ## Known issues
 
-These are real limitations visible in the code, not a wish list.
-
-- **Rooms are ephemeral.** Room state lives only in Redis, and
-  `docker-compose.local.yml` configures no AOF/RDB persistence, so a Redis restart
-  drops in-progress rooms. See `server/src/services/roomManager.ts`.
-- **Sentence selection does not scale.** `sentenceService.selectSentences` uses
-  `ORDER BY RANDOM()`, a full scan per query. Fine at the current pool size; the
-  first thing to revisit if the pool grows large.
-- **Config drift.** `DISCONNECT_GRACE_PERIOD_MS` is set in `.env` but is not read
-  by the server, which uses `CONSTANTS.DISCONNECT_GRACE_PERIOD` (30000 ms). Either
-  wire the env var up or remove it.
 - **No real accounts.** Players are guests (`isGuest: true`); there is no login, so
   per-user history is not durable.
 

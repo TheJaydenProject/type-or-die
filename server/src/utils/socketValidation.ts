@@ -1,6 +1,14 @@
+/**
+ * Read a positive integer from the environment, falling back when unset or invalid.
+ */
+function envInt(name: string, fallback: number): number {
+	const value = Number.parseInt(process.env[name] ?? "", 10);
+	return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
 export const CONSTANTS = {
 	COUNTDOWN_DURATION: 3000,
-	DISCONNECT_GRACE_PERIOD: 30000,
+	DISCONNECT_GRACE_PERIOD: envInt("DISCONNECT_GRACE_PERIOD_MS", 30000),
 	GAME_DURATION_TIMEOUT: 20000,
 	MAX_NICKNAME_LENGTH: 20,
 	ROULETTE_ANIMATION_MS: 5000,

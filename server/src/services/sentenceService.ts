@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import db from "../config/database.js";
 
 interface SentenceRow {
@@ -26,32 +27,10 @@ class SentenceService {
 		const easyCount = Math.floor(count * 0.3);
 		const mediumCount = count - easyCount;
 
-		const baseWhere = `
-			is_active = TRUE
-			AND language = 'en'
-			AND contains_emoji = FALSE
-		`;
-
-		const fetchByDifficulty = async (
-			difficulty: string,
-			limit: number,
-		): Promise<string[]> => {
-			const result = await db.query(
-				`SELECT text FROM sentences WHERE ${baseWhere} AND difficulty = $1 ORDER BY RANDOM() LIMIT $2`,
-				[difficulty, limit],
-			);
-			if (result.rows.length < limit) {
-				throw new Error(
-					`Insufficient ${difficulty} sentences in pool (need ${limit}, got ${result.rows.length})`,
-				);
-			}
-			return result.rows.map((row: SentenceRow) => row.text);
-		};
-
 		try {
 			const [easy, medium] = await Promise.all([
-				fetchByDifficulty("EASY", easyCount),
-				fetchByDifficulty("MEDIUM", mediumCount),
+				this.fetchByDifficulty("EASY", easyCount),
+				this.fetchByDifficulty("MEDIUM", mediumCount),
 			]);
 
 			// Order: easy first, then medium
@@ -68,6 +47,55 @@ class SentenceService {
 			);
 			throw error;
 		}
+	}
+
+	/**
+	 * Uniform random sample without `ORDER BY RANDOM()`.
+	 *
+	 * `id` is a random UUID (`gen_random_uuid()`), so ordering by it is a
+	 * uniformly random permutation of the rows. Taking `limit` rows after a
+	 * random UUID boundary is a uniform random sample, and it uses the
+	 * primary-key index (roughly O(log n + limit)) instead of scanning and
+	 * sorting the whole pool.
+	 */
+	private async fetchByDifficulty(
+		difficulty: string,
+		limit: number,
+	): Promise<string[]> {
+		if (limit <= 0) return [];
+
+		const baseWhere = `
+			is_active = TRUE
+			AND language = 'en'
+			AND contains_emoji = FALSE
+			AND difficulty = $1
+		`;
+
+		const pivot = crypto.randomUUID();
+
+		const tail = await db.query(
+			`SELECT text FROM sentences WHERE ${baseWhere} AND id > $2::uuid ORDER BY id LIMIT $3`,
+			[difficulty, pivot, limit],
+		);
+
+		let rows: SentenceRow[] = tail.rows;
+
+		// If the boundary landed near the end of the pool, wrap around to the head.
+		if (rows.length < limit) {
+			const head = await db.query(
+				`SELECT text FROM sentences WHERE ${baseWhere} AND id <= $2::uuid ORDER BY id LIMIT $3`,
+				[difficulty, pivot, limit - rows.length],
+			);
+			rows = [...rows, ...head.rows];
+		}
+
+		if (rows.length < limit) {
+			throw new Error(
+				`Insufficient ${difficulty} sentences in pool (need ${limit}, got ${rows.length})`,
+			);
+		}
+
+		return rows.map((row) => row.text);
 	}
 
 	validateSentence(text: string): SentenceValidationResult {
