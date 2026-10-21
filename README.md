@@ -7,10 +7,6 @@ TypeScript monorepo (Vue 3 client, Node.js + Socket.IO server, Redis + Postgres)
 Play it at [typeordie.org](https://typeordie.org/). Found a bug?
 [Report it](https://github.com/TheJaydenProject/type-or-die/issues/new).
 
-[![MIT License](https://img.shields.io/github/license/TheJaydenProject/type-or-die.svg)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/TheJaydenProject/type-or-die.svg)](https://github.com/TheJaydenProject/type-or-die/stargazers)
-[![Issues](https://img.shields.io/github/issues/TheJaydenProject/type-or-die.svg)](https://github.com/TheJaydenProject/type-or-die/issues)
-
 <details>
   <summary>Table of contents</summary>
 
