@@ -155,7 +155,7 @@ uppercase labels, and a high-contrast palette (`client/src/App.css`).
 
 ```mermaid
 flowchart LR
-  subgraph Browser
+  subgraph Browser["Browser"]
     SPA["Vue 3 SPA<br/>client/src/App.vue"]
   end
 
@@ -177,14 +177,22 @@ flowchart LR
   R[("Redis 7<br/>rooms, locks, IP limits")]
   P[("PostgreSQL 15<br/>sentences")]
 
-  SPA -->|HTTPS| TR --> NG
-  SPA -->|"Socket.IO / WebSocket (/socket.io)"| NG
+  SPA -->|HTTPS| TR
+  TR --> NG
+  SPA -->|"Socket.IO / WebSocket"| NG
   NG -->|"proxy :3001"| IO
   IO --> H
   H --> RM
   H --> SS
-  RM -->|"room JSON, locks, EVAL Lua"| R
+  RM -->|"room JSON, Lua EVAL"| R
   SS -->|SQL| P
+
+  classDef edge fill:#57606a,stroke:#57606a,color:#ffffff
+  classDef svc fill:#8957e5,stroke:#8957e5,color:#ffffff
+  classDef store fill:#1f6feb,stroke:#1f6feb,color:#ffffff
+  class TR,NG edge
+  class IO,H,RM,SS svc
+  class R,P store
 ```
 
 Edges are grounded in `client/nginx.conf` (proxy of `/socket.io` and `/api` to
@@ -196,6 +204,7 @@ Edges are grounded in `client/nginx.conf` (proxy of `/socket.io` and `/api` to
 
 ```mermaid
 sequenceDiagram
+  autonumber
   participant P as Player (Vue)
   participant S as Server (Socket.IO)
   participant R as Redis
@@ -203,17 +212,22 @@ sequenceDiagram
 
   P->>S: create_room { nickname, settings }
   S->>R: registerRoomCreation (Lua) + SET room:<code>
+  R-->>S: registered
   S-->>P: { roomCode, playerId }
+
   P->>S: start_game
   S->>D: selectSentences (30% EASY, 70% MEDIUM)
+  D-->>S: sentences
   S-->>P: countdown_start (3s)
   S-->>P: game_start
+
   loop every keystroke
     P->>S: char_typed { char, charIndex }
     S->>R: EVAL atomicCharUpdate.lua
     R-->>S: CORRECT | MISTYPE | SENTENCE_COMPLETE
     S-->>P: player_progress
   end
+
   Note over P,S: 3rd strike triggers roulette (odds 1/6 down to 1/2)
   S-->>P: roulette_result, then player_died if unlucky
   S-->>P: game_ended { reason, winnerId, finalStats }
