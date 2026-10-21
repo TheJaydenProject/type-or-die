@@ -6,8 +6,13 @@ TypeScript monorepo.
 
 ![Vue 3](https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs&logoColor=white) ![Node.js](https://img.shields.io/badge/Node.js-22-5FA04E?logo=nodedotjs&logoColor=white) ![Socket.IO](https://img.shields.io/badge/Socket.IO-4-010101?logo=socketdotio&logoColor=white) ![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white) ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-4169E1?logo=postgresql&logoColor=white)
 
-Play it at [typeordie.org](https://typeordie.org/). Found a bug?
-[Report it](https://github.com/TheJaydenProject/type-or-die/issues/new).
+<h2 align="center">
+  <a href="https://typeordie.org/">Play at typeordie.org</a>
+</h2>
+
+<p align="center">
+  Found a bug? <a href="https://github.com/TheJaydenProject/type-or-die/issues/new">Report it</a>.
+</p>
 
 <details open>
   <summary>Table of contents</summary>
