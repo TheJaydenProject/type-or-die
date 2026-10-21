@@ -160,7 +160,7 @@ flowchart LR
   end
 
   subgraph Edge["Edge (production)"]
-    TR["Traefik<br/>TLS + Let's Encrypt"]
+    TR["Reverse proxy<br/>TLS termination"]
   end
 
   subgraph Frontend["frontend container (nginx)"]
@@ -314,11 +314,11 @@ Rationale that is not recorded anywhere in the repository is labelled **inferred
 - **Trade-off:** both packages must build against the shared package, which is why
   the Dockerfiles build `shared` before `server` and `client`.
 
-### Deploy is a single host behind Traefik
+### Deployed as a single Compose stack behind a reverse proxy
 
-- **Decision:** GitHub Actions builds, type-checks, and lints, then reaches the
-  server over Tailscale and runs `docker compose` there; Traefik terminates TLS
-  with Let's Encrypt. See `.github/workflows/deploy.yml` and `docker-compose.yml`.
+- **Decision:** CI builds, type-checks, and lints, then deploys over an
+  authenticated tunnel to one host running Docker Compose; a reverse proxy
+  terminates TLS for the domain. The production Compose stack is gitignored.
 - **Alternatives:** a managed platform; Kubernetes.
 - **Why this one:** one small host and one domain, so a single Compose stack plus a
   reverse proxy is the least infrastructure that meets the need.
@@ -333,7 +333,7 @@ Rationale that is not recorded anywhere in the repository is labelled **inferred
 
 - Docker and Docker Compose (the recommended path), or
 - Node.js 22 and local Postgres 15 and Redis 7 (for running without Docker).
-  The CI workflow uses Node 20 (`.github/workflows/deploy.yml`).
+  CI builds on Node 20.
 
 ### Run without Docker
 
@@ -367,7 +367,7 @@ type-or-die/
   shared/          @typeordie/shared: socket protocol + entity types
   load-tests/      k6-style load test (loadtest.ts)
   docker-compose.local.yml   local development stack
-  docker-compose.yml         production stack (Traefik labels; gitignored)
+  docker-compose.yml         production stack (gitignored)
   init-sentences-db.sql      DB schema + seed (gitignored; you create it)
 ```
 
