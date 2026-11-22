@@ -7,6 +7,17 @@ import {
 	resetPlayerToLobbyState,
 } from "../utils/playerStateHelpers.js";
 
+const _IP_HASH_KEY = process.env.SESSION_SECRET;
+
+if (!_IP_HASH_KEY || _IP_HASH_KEY.length < 32) {
+	console.error(
+		"[FATAL] SESSION_SECRET is missing or unsafe (min 32 chars required). Exiting.",
+	);
+	process.exit(1);
+}
+
+const IP_HASH_KEY: string = _IP_HASH_KEY;
+
 interface RateLimitData {
 	count: number;
 	resetTime: number;
@@ -118,9 +129,13 @@ class RoomManager {
 		return code;
 	}
 
+	// Keyed (HMAC) rather than plain SHA-256: room state, including creatorIP and each
+	// player's ipAddress, is sent to every client in the room, and a plain hash of an
+	// IPv4 address is reversed by hashing all ~4 billion addresses. All backend
+	// replicas share SESSION_SECRET, so they agree on the per-IP Redis keys.
 	hashIP(ip: string): string {
 		if (!ip) return "unknown";
-		return crypto.createHash("sha256").update(ip).digest("hex");
+		return crypto.createHmac("sha256", IP_HASH_KEY).update(ip).digest("hex");
 	}
 
 	// ... [Rate limiting & Validation] ...

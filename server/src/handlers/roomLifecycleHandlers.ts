@@ -8,6 +8,7 @@ import type { Server, Socket } from "socket.io";
 import { v4 as uuidv4 } from "uuid";
 import roomManager from "../services/roomManager.js";
 import { generateSessionToken } from "../utils/auth.js";
+import { getClientIp } from "../utils/clientIp.js";
 import {
 	cleanupDisconnectTimer,
 	playerEventQueues,
@@ -43,7 +44,7 @@ export function setupRoomLifecycleHandlers(
 			validateInput("nickname", data);
 
 			const { nickname, settings } = data;
-			const ipAddress = socket.handshake.address;
+			const ipAddress = getClientIp(socket);
 			const playerId = uuidv4();
 
 			if (!settings || !settings.sentenceCount) {
@@ -93,7 +94,7 @@ export function setupRoomLifecycleHandlers(
 
 	socket.on("join_room", async (data, callback) => {
 		try {
-			const ipAddress = socket.handshake.address;
+			const ipAddress = getClientIp(socket);
 			if (!roomManager.checkEventRateLimit(ipAddress)) {
 				console.warn(`[DoS Block] Join flood detected from ${ipAddress}`);
 				return callback({
@@ -212,7 +213,7 @@ export function setupRoomLifecycleHandlers(
 				roomCode,
 				playerId,
 				nickname,
-				socket.handshake.address,
+				getClientIp(socket),
 			);
 
 			// Ensure socket is linked (redundant but safe)

@@ -6,6 +6,7 @@ import type {
 import type { RemoteSocket, Server, Socket } from "socket.io";
 import roomManager from "../services/roomManager.js";
 import sentenceService from "../services/sentenceService.js";
+import { getClientIp } from "../utils/clientIp.js";
 import {
 	buildFreshPlayerState,
 	cleanupRoomTimer,
@@ -153,7 +154,7 @@ export function setupGameFlowHandlers(io: TypedServer, socket: TypedSocket) {
 									spectatorId,
 									nickname,
 									spectatorSocket.id,
-									spectatorSocket.handshake.address,
+									roomManager.hashIP(getClientIp(spectatorSocket)),
 								);
 
 								room.players[spectatorId] = recoveredPlayer;
@@ -239,7 +240,7 @@ export function setupGameFlowHandlers(io: TypedServer, socket: TypedSocket) {
 							sockPlayerId,
 							nickname,
 							sock.id,
-							sock.handshake.address,
+							roomManager.hashIP(getClientIp(sock)),
 						);
 
 						room.players[sockPlayerId] = newPlayer;

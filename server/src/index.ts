@@ -27,6 +27,10 @@ if (missing.length > 0) {
 }
 
 const app = express();
+// One proxy hop (nginx) sits in front, so req.ip comes from the last X-Forwarded-For
+// entry nginx adds, which is the real visitor IP. Without this every request shares
+// nginx's IP and one rate-limit bucket.
+app.set("trust proxy", 1);
 const server = http.createServer(app);
 const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173";
 
