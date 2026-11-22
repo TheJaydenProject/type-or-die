@@ -4,12 +4,22 @@ interface HasHandshake {
 	handshake: { address: string; headers: IncomingHttpHeaders };
 }
 
-// handshake.address is nginx's container IP, which would put every visitor in one
-// rate-limit bucket. nginx (client/nginx.conf) sets X-Real-IP to the visitor's IP
-// from Cloudflare's CF-Connecting-IP. The backend publishes no port, so only nginx
-// can reach it and outsiders cannot forge this header.
+// Every request reaches the backend from Traefik (or nginx behind it), so the
+// socket address is a container IP shared by all visitors. Cloudflare sets
+// CF-Connecting-IP to the real visitor and overwrites any value a visitor sends,
+// and the Traefik routers only admit Cloudflare (typeordie-cf-only), so the header
+// cannot be forged. X-Real-IP is a fallback for the nginx path.
+export function pickClientIp(
+	headers: IncomingHttpHeaders,
+	fallback: string,
+): string {
+	for (const name of ["cf-connecting-ip", "x-real-ip"]) {
+		const value = headers[name];
+		if (typeof value === "string" && value.length > 0) return value;
+	}
+	return fallback;
+}
+
 export function getClientIp(socket: HasHandshake): string {
-	const realIp = socket.handshake.headers["x-real-ip"];
-	if (typeof realIp === "string" && realIp.length > 0) return realIp;
-	return socket.handshake.address;
+	return pickClientIp(socket.handshake.headers, socket.handshake.address);
 }

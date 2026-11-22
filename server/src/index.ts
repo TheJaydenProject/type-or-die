@@ -1,7 +1,7 @@
 import http from "node:http";
 import cors from "cors";
 import express from "express";
-import { rateLimit } from "express-rate-limit";
+import { ipKeyGenerator, rateLimit } from "express-rate-limit";
 import helmet from "helmet";
 import pino from "pino";
 import { Server } from "socket.io";
@@ -16,6 +16,7 @@ import db from "./config/database.js";
 import redis from "./config/redis.js";
 import setupSocketHandlers from "./handlers/socketHandlers.js";
 import roomManager from "./services/roomManager.js";
+import { pickClientIp } from "./utils/clientIp.js";
 
 const logger = pino();
 const requiredEnvVars = ["DB_PASSWORD", "DB_HOST", "DB_NAME"];
@@ -27,9 +28,8 @@ if (missing.length > 0) {
 }
 
 const app = express();
-// One proxy hop (nginx) sits in front, so req.ip comes from the last X-Forwarded-For
-// entry nginx adds, which is the real visitor IP. Without this every request shares
-// nginx's IP and one rate-limit bucket.
+// One proxy hop (Traefik or nginx) sits in front. The limiter keys on the visitor
+// IP from pickClientIp; this only keeps req.ip sensible as its fallback.
 app.set("trust proxy", 1);
 const server = http.createServer(app);
 const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173";
@@ -39,6 +39,8 @@ const limiter = rateLimit({
 	limit: 100,
 	standardHeaders: true,
 	legacyHeaders: false,
+	// ipKeyGenerator groups IPv6 visitors by /56 so one user can't rotate addresses.
+	keyGenerator: (req) => ipKeyGenerator(pickClientIp(req.headers, req.ip ?? "")),
 });
 
 app.use(helmet());

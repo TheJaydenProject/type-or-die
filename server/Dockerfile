@@ -45,5 +45,8 @@ ENV NODE_ENV=production
 
 EXPOSE 3001
 
+# The app only reads its own files, so it runs as the image's unprivileged user.
+USER node
+
 # 5. Run the compiled JS
 CMD ["node", "server/dist/index.js"]
