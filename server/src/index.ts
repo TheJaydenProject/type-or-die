@@ -40,7 +40,8 @@ const limiter = rateLimit({
 	standardHeaders: true,
 	legacyHeaders: false,
 	// ipKeyGenerator groups IPv6 visitors by /56 so one user can't rotate addresses.
-	keyGenerator: (req) => ipKeyGenerator(pickClientIp(req.headers, req.ip ?? "")),
+	keyGenerator: (req) =>
+		ipKeyGenerator(pickClientIp(req.headers, req.ip ?? "")),
 });
 
 app.use(helmet());
