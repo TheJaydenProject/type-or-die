@@ -1,7 +1,6 @@
 import type {
 	ClientToServerEvents,
 	PlayerState,
-	RoomState,
 	ServerToClientEvents,
 	SocketData,
 } from "@typeordie/shared";
@@ -34,9 +33,9 @@ type TypedSocket = Socket<
 async function checkGameOver(
 	io: TypedServer,
 	roomCode: string,
-	room: RoomState,
 ): Promise<boolean> {
-	if (room.status === "FINISHED") {
+	const room = await roomManager.getRoom(roomCode);
+	if (!room || room.status === "FINISHED") {
 		return true;
 	}
 
@@ -45,6 +44,14 @@ async function checkGameOver(
 	);
 
 	if (alivePlayers.length === 0) {
+		// Only the writer that actually flips PLAYING -> FINISHED announces the end, so
+		// two players dying at once on different replicas can't end the game twice.
+		const finished = await roomManager.patchRoom(roomCode, {
+			requireStatus: "PLAYING",
+			setStatus: "FINISHED",
+		});
+		if (!finished) return true;
+
 		const sortedPlayers = Object.values(room.players).sort((a, b) => {
 			// 1. Primary: Sentence Count (Highest Wins)
 			if (b.completedSentences !== a.completedSentences) {
@@ -64,9 +71,7 @@ async function checkGameOver(
 			return b.totalCorrectChars - a.totalCorrectChars;
 		});
 
-		room.status = "FINISHED";
 		cleanupRoomTimer(roomCode);
-		await roomManager.updateRoom(roomCode, room);
 
 		// Final Stats now only contain player state without score metadata
 		const finalStats: Record<string, PlayerState> = {};
@@ -82,7 +87,6 @@ async function checkGameOver(
 		return true;
 	}
 
-	await roomManager.updateRoom(roomCode, room);
 	return false;
 }
 
@@ -91,7 +95,7 @@ async function checkGameOver(
  */
 async function processCharTypedEvent(
 	io: TypedServer,
-	socket: TypedSocket,
+	playerId: string,
 	data: {
 		roomCode: string;
 		char: string;
@@ -99,9 +103,6 @@ async function processCharTypedEvent(
 		timestamp?: number;
 	},
 ): Promise<void> {
-	const playerId = socket.data.playerId;
-	if (!playerId) return;
-
 	const { roomCode, char, charIndex } = data;
 
 	const updated = await roomManager.atomicCharUpdate(
@@ -131,12 +132,15 @@ async function processCharTypedEvent(
 			...player,
 		});
 	} else if (result.type === "SENTENCE_COMPLETE") {
-		await roomManager.updateRoom(roomCode, room);
-
+		// atomicCharUpdate.lua already saved the room; writing `room` back here would
+		// overwrite other players' keystrokes made since it was read.
 		if (player.completedSentences === room.settings.sentenceCount) {
-			room.status = "FINISHED";
+			const finished = await roomManager.patchRoom(roomCode, {
+				requireStatus: "PLAYING",
+				setStatus: "FINISHED",
+			});
+			if (!finished) return;
 			cleanupRoomTimer(roomCode);
-			await roomManager.updateRoom(roomCode, room);
 
 			io.to(roomCode).emit("game_ended", {
 				reason: "COMPLETION",
@@ -153,7 +157,12 @@ async function processCharTypedEvent(
 			});
 		}
 	} else if (result.type === "MISTYPE") {
-		await processMistypeEvent(io, socket, {
+		await processMistypeEvent(io, playerId, {
+			roomCode,
+			sentenceIndex: player.currentSentenceIndex,
+		});
+	} else if (result.type === "TIMEOUT") {
+		await processTimeoutEvent(io, playerId, {
 			roomCode,
 			sentenceIndex: player.currentSentenceIndex,
 		});
@@ -165,7 +174,7 @@ async function processCharTypedEvent(
  */
 async function processMistypeEvent(
 	io: TypedServer,
-	socket: TypedSocket,
+	playerId: string,
 	data: {
 		roomCode: string;
 		sentenceIndex: number;
@@ -173,9 +182,6 @@ async function processMistypeEvent(
 		typedChar?: string;
 	},
 ): Promise<void> {
-	const playerId = socket.data.playerId;
-	if (!playerId) return;
-
 	const { roomCode, sentenceIndex } = data;
 
 	const room = await roomManager.getRoom(roomCode);
@@ -266,8 +272,8 @@ async function processMistypeEvent(
 				expiresAt: Date.now() + CONSTANTS.ROULETTE_ANIMATION_MS,
 			};
 
-			// Save room state immediately to persist DEAD status
-			await roomManager.updateRoom(roomCode, room);
+			// Persist DEAD (and activeRoulette, for reconnects) before announcing it
+			await roomManager.patchRoom(roomCode, { playerId, playerFields: player });
 
 			io.to(roomCode).emit("roulette_result", {
 				playerId: playerId,
@@ -292,20 +298,21 @@ async function processMistypeEvent(
 						deathReason: "MISTYPE",
 						timeUsed: (Date.now() - (p.sentenceStartTime || Date.now())) / 1000,
 					});
+					await roomManager.patchRoom(roomCode, {
+						playerId,
+						playerFields: { sentenceHistory: p.sentenceHistory },
+					});
 
 					io.to(roomCode).emit("player_died", {
 						playerId: playerId,
 						deathReason: "MISTYPE",
 					});
 
-					await checkGameOver(io, roomCode, freshRoom);
+					await checkGameOver(io, roomCode);
 				} catch (err) {
 					console.error(`Error in delayed mistype death for ${playerId}:`, err);
 				}
 			}, CONSTANTS.ROULETTE_ANIMATION_MS);
-
-			// Save room with the activeRoulette state for persistence/reconnects
-			await roomManager.updateRoom(roomCode, room);
 			return;
 		}
 	} else {
@@ -320,20 +327,18 @@ async function processMistypeEvent(
 		});
 	}
 
-	await roomManager.updateRoom(roomCode, room);
+	await roomManager.patchRoom(roomCode, { playerId, playerFields: player });
 }
 
 /**
- * Handles logic when a player runs out of time.
+ * Handles a player running out of time. Called for the client's own
+ * sentence_timeout, for a late keystroke (atomicCharUpdate.lua), and by the sweep.
  */
 async function processTimeoutEvent(
 	io: TypedServer,
-	socket: TypedSocket,
+	playerId: string,
 	data: { roomCode: string; sentenceIndex: number },
 ): Promise<void> {
-	const playerId = socket.data.playerId;
-	if (!playerId) return;
-
 	const { roomCode, sentenceIndex } = data;
 	const room = await roomManager.getRoom(roomCode);
 	if (!room || room.status !== "PLAYING") return;
@@ -345,6 +350,19 @@ async function processTimeoutEvent(
 		console.warn(
 			`[SECURITY] Player ${playerId} sent timeout for sentence ${sentenceIndex} but is on ${player.currentSentenceIndex}`,
 		);
+		return;
+	}
+
+	// Ignore a timeout that isn't due yet by the server's clock. This is also what makes
+	// a duplicate (client event + sweep) harmless: a survived roll moves
+	// sentenceStartTime into the future, so the second one is rejected here.
+	if (
+		typeof player.sentenceStartTime === "number" &&
+		Date.now() <
+			player.sentenceStartTime +
+				CONSTANTS.GAME_DURATION_TIMEOUT -
+				CONSTANTS.TIMEOUT_EARLY_TOLERANCE_MS
+	) {
 		return;
 	}
 
@@ -398,7 +416,7 @@ async function processTimeoutEvent(
 			sentenceStartTime: futureStartTime,
 		});
 
-		await roomManager.updateRoom(roomCode, room);
+		await roomManager.patchRoom(roomCode, { playerId, playerFields: player });
 	} else {
 		player.status = "DEAD";
 		player.activeRoulette = {
@@ -417,7 +435,7 @@ async function processTimeoutEvent(
 		});
 
 		// Save room state before waiting for death timeout
-		await roomManager.updateRoom(roomCode, room);
+		await roomManager.patchRoom(roomCode, { playerId, playerFields: player });
 
 		// Delay death broadcast to allow roulette animation to finish
 		setTimeout(async () => {
@@ -434,18 +452,71 @@ async function processTimeoutEvent(
 					deathReason: "TIMEOUT",
 					timeUsed: CONSTANTS.GAME_DURATION_TIMEOUT / 1000,
 				});
+				await roomManager.patchRoom(roomCode, {
+					playerId,
+					playerFields: { sentenceHistory: p.sentenceHistory },
+				});
 
 				io.to(roomCode).emit("player_died", {
 					playerId: playerId,
 					deathReason: "TIMEOUT",
 				});
 
-				await checkGameOver(io, roomCode, freshRoom);
+				await checkGameOver(io, roomCode);
 			} catch (err) {
 				console.error(`Error in delayed timeout death for ${playerId}:`, err);
 			}
 		}, CONSTANTS.ROULETTE_ANIMATION_MS);
 	}
+}
+
+/**
+ * The 20s limit can't depend on the client reporting its own timeout: a modified
+ * client would simply never send it. Each replica checks the players whose sockets
+ * it holds, so no two replicas time out the same player.
+ */
+export function startTimeoutSweep(io: TypedServer): void {
+	setInterval(async () => {
+		try {
+			const roomCodes = new Set<string>();
+			for (const socket of io.sockets.sockets.values()) {
+				if (socket.data.roomCode && socket.data.playerId) {
+					roomCodes.add(socket.data.roomCode);
+				}
+			}
+
+			const now = Date.now();
+			const deadlineMs =
+				CONSTANTS.GAME_DURATION_TIMEOUT + CONSTANTS.TIMEOUT_SLACK_MS;
+
+			for (const roomCode of roomCodes) {
+				const room = await roomManager.getRoom(roomCode);
+				if (!room || room.status !== "PLAYING") continue;
+
+				for (const player of Object.values(room.players)) {
+					if (
+						player.status !== "ALIVE" ||
+						typeof player.sentenceStartTime !== "number" ||
+						now <= player.sentenceStartTime + deadlineMs ||
+						!player.socketId ||
+						!io.sockets.sockets.has(player.socketId)
+					) {
+						continue;
+					}
+
+					const sentenceIndex = player.currentSentenceIndex;
+					void queuePlayerEvent(player.id, () =>
+						processTimeoutEvent(io, player.id, { roomCode, sentenceIndex }),
+					);
+				}
+			}
+		} catch (err) {
+			console.error(
+				"Timeout sweep error:",
+				err instanceof Error ? err.message : err,
+			);
+		}
+	}, CONSTANTS.TIMEOUT_SWEEP_INTERVAL_MS);
 }
 
 export function setupPlayerActionHandlers(
@@ -463,7 +534,7 @@ export function setupPlayerActionHandlers(
 			validateInput("roomCode", data);
 
 			await queuePlayerEvent(playerId, () =>
-				processCharTypedEvent(io, socket, data),
+				processCharTypedEvent(io, playerId, data),
 			);
 		} catch (error) {
 			console.error(
@@ -488,7 +559,7 @@ export function setupPlayerActionHandlers(
 			validateInput("sentenceIndex", data);
 
 			await queuePlayerEvent(playerId, () =>
-				processMistypeEvent(io, socket, data),
+				processMistypeEvent(io, playerId, data),
 			);
 		} catch (error) {
 			console.error(
@@ -513,7 +584,7 @@ export function setupPlayerActionHandlers(
 			validateInput("sentenceIndex", data);
 
 			await queuePlayerEvent(playerId, () =>
-				processTimeoutEvent(io, socket, data),
+				processTimeoutEvent(io, playerId, data),
 			);
 		} catch (error) {
 			console.error(

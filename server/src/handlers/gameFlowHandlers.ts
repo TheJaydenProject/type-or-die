@@ -61,6 +61,7 @@ export function setupGameFlowHandlers(io: TypedServer, socket: TypedSocket) {
 			room.sentences = splitSentences as unknown as string[];
 
 			const countdownStartTime = Date.now();
+			room.countdownStartedAt = countdownStartTime;
 
 			Object.keys(room.players).forEach((pId) => {
 				resetPlayerToLobbyState(room.players[pId]);
@@ -81,7 +82,13 @@ export function setupGameFlowHandlers(io: TypedServer, socket: TypedSocket) {
 			const timerId = setTimeout(async () => {
 				try {
 					const updatedRoom = await roomManager.getRoom(roomCode);
-					if (updatedRoom && updatedRoom.status === "COUNTDOWN") {
+					// cleanupRoomTimer only reaches timers on this replica. If the host reset and
+					// restarted through another replica, this timer belongs to an older countdown.
+					if (
+						updatedRoom &&
+						updatedRoom.status === "COUNTDOWN" &&
+						updatedRoom.countdownStartedAt === countdownStartTime
+					) {
 						updatedRoom.status = "PLAYING";
 						updatedRoom.gameStartedAt = Date.now();
 

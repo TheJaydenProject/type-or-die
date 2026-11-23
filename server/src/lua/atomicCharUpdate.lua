@@ -8,6 +8,10 @@ local char = ARGV[2]
 local char_index = tonumber(ARGV[3])
 local timestamp = tonumber(ARGV[4])
 local room_ttl = tonumber(ARGV[5])
+local timeout_ms = tonumber(ARGV[6])
+local timeout_slack_ms = tonumber(ARGV[7])
+local burst_chars = tonumber(ARGV[8])
+local chars_per_sec = tonumber(ARGV[9])
 
 local room_data = redis.call('GET', room_key)
 if not room_data then return nil end
@@ -24,6 +28,39 @@ end
 if player.activeRoulette and not player.activeRoulette.survived then
     return nil
 end
+
+-- The clock is the server's, never the client's. sentenceStartTime is in the future
+-- while a survived roulette animates, so keys sent then are ignored.
+local start_time = player.sentenceStartTime
+if type(start_time) == 'number' then
+    if timestamp < start_time then
+        return nil
+    end
+    if timestamp > start_time + timeout_ms + timeout_slack_ms then
+        return cjson.encode({
+            type = 'TIMEOUT',
+            player = player,
+            wordIndex = player.currentWordIndex,
+            charInWord = player.currentCharInWord,
+            extraData = {}
+        })
+    end
+end
+
+-- Token bucket against bots. Nothing is saved on a drop; the next key then mismatches
+-- the server's position and counts as a mistype, which is the intended penalty.
+local tokens = player.typeTokens
+local tokens_at = player.typeTokensAt
+if type(tokens) ~= 'number' or type(tokens_at) ~= 'number' then
+    tokens = burst_chars
+    tokens_at = timestamp
+end
+tokens = math.min(burst_chars, tokens + (timestamp - tokens_at) * chars_per_sec / 1000)
+if tokens < 1 then
+    return nil
+end
+player.typeTokens = tokens - 1
+player.typeTokensAt = timestamp
 
 local words = room.sentences[player.currentSentenceIndex + 1]
 if not words or type(words) ~= "table" then return nil end

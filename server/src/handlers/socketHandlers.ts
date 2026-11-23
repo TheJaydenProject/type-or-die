@@ -6,7 +6,10 @@ import type {
 import type { Server, Socket } from "socket.io";
 import { setupConnectionHandlers } from "./connectionHandlers.js";
 import { setupGameFlowHandlers } from "./gameFlowHandlers.js";
-import { setupPlayerActionHandlers } from "./playerActionHandlers.js";
+import {
+	setupPlayerActionHandlers,
+	startTimeoutSweep,
+} from "./playerActionHandlers.js";
 import { setupRoomLifecycleHandlers } from "./roomLifecycleHandlers.js";
 
 type TypedServer = Server<
@@ -23,6 +26,8 @@ type TypedSocket = Socket<
 >;
 
 export default function setupSocketHandlers(io: TypedServer) {
+	startTimeoutSweep(io);
+
 	io.on("connection", (socket) => {
 		// Socket.io's generic inference loses the typed overloads without this cast
 		const typedSocket = socket as TypedSocket;

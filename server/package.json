@@ -8,6 +8,7 @@
 		"start": "node dist/index.js"
 	},
 	"dependencies": {
+		"@socket.io/redis-adapter": "^8.3.0",
 		"@typeordie/shared": "*",
 		"bcrypt": "^6.0.0",
 		"cors": "^2.8.5",

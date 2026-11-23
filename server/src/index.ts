@@ -1,4 +1,5 @@
 import http from "node:http";
+import { createAdapter } from "@socket.io/redis-adapter";
 import cors from "cors";
 import express from "express";
 import { ipKeyGenerator, rateLimit } from "express-rate-limit";
@@ -70,6 +71,11 @@ const io = new Server<
 	perMessageDeflate: false,
 	transports: ["websocket", "polling"],
 });
+
+// Several backend replicas run behind Traefik. Without this, io.to(room).emit only
+// reaches sockets on the same replica, so players on different replicas never see
+// each other. Pub/sub needs its own connections, hence duplicate().
+io.adapter(createAdapter(redis.duplicate(), redis.duplicate()));
 
 setupSocketHandlers(io);
 

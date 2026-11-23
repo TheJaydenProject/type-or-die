@@ -20,6 +20,7 @@ class LuaScriptLoader {
 			"registerRoomCreation.lua",
 			"unregisterRoomCreation.lua",
 			"releaseLock.lua",
+			"patchRoom.lua",
 		];
 
 		for (const filename of scriptFiles) {

@@ -202,16 +202,28 @@ watch(connected, (isConnected) => {
 	const savedSession = localStorage.getItem("type_or_die_session");
 
 	if (savedSession && isConnected && view.value === "MENU") {
-		const { playerId: savedId, roomCode: savedCode } = JSON.parse(savedSession);
+		const {
+			playerId: savedId,
+			roomCode: savedCode,
+			token: savedToken,
+		} = JSON.parse(savedSession);
 		console.log("Attempting reconnection...", { savedId, savedCode });
 		loading.value = true;
 
 		socket.emit(
 			"reconnect_attempt",
-			{ roomCode: savedCode, playerId: savedId },
+			{ roomCode: savedCode, playerId: savedId, token: savedToken },
 			(response) => {
 				if (response.success) {
 					console.log("RECONNECTION SUCCESSFUL");
+					localStorage.setItem(
+						"type_or_die_session",
+						JSON.stringify({
+							playerId: response.playerId,
+							roomCode: savedCode,
+							token: response.token,
+						}),
+					);
 					currentRoom.value = response.room;
 					playerId.value = response.playerId;
 
@@ -281,6 +293,7 @@ const handleCreateRoom = () => {
 					JSON.stringify({
 						playerId: response.playerId,
 						roomCode: response.room.roomCode,
+						token: response.token,
 					}),
 				);
 			} else {
@@ -328,6 +341,7 @@ const handleJoinRoom = () => {
 					JSON.stringify({
 						playerId: response.playerId,
 						roomCode: response.room.roomCode,
+						token: response.token,
 					}),
 				);
 			} else {

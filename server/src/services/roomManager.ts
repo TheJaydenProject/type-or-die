@@ -1,4 +1,4 @@
-import type { RoomState } from "@typeordie/shared";
+import type { PlayerState, RoomState, RoomStatus } from "@typeordie/shared";
 import crypto from "crypto";
 import redis from "../config/redis.js";
 import luaScripts from "../utils/luaScripts.js";
@@ -6,6 +6,16 @@ import {
 	buildFreshPlayerState,
 	resetPlayerToLobbyState,
 } from "../utils/playerStateHelpers.js";
+import { CONSTANTS } from "../utils/socketValidation.js";
+
+interface RoomPatch {
+	playerId?: string;
+	// null clears a field (JSON null); undefined fields are not sent
+	playerFields?: { [K in keyof PlayerState]?: PlayerState[K] | null };
+	requireStatus?: RoomStatus;
+	setStatus?: RoomStatus;
+	addSpectator?: string;
+}
 
 const _IP_HASH_KEY = process.env.SESSION_SECRET;
 
@@ -400,7 +410,21 @@ class RoomManager {
 		const roomData = await redis.get(`${this.ROOM_PREFIX}${roomCode}`);
 		if (!roomData) return null;
 		try {
-			return JSON.parse(roomData);
+			const room: RoomState = JSON.parse(roomData);
+			// Lua's cjson writes an empty array back as {}, which made reconnect reject the
+			// room ("malformed spectators array") after any Lua write. Restore the arrays.
+			if (!Array.isArray(room.spectators)) {
+				room.spectators = Object.values(room.spectators ?? {});
+			}
+			for (const player of Object.values(room.players ?? {})) {
+				if (!Array.isArray(player.rouletteHistory)) {
+					player.rouletteHistory = Object.values(player.rouletteHistory ?? {});
+				}
+				if (!Array.isArray(player.sentenceHistory)) {
+					player.sentenceHistory = Object.values(player.sentenceHistory ?? {});
+				}
+			}
+			return room;
 		} catch (err) {
 			console.error(err instanceof Error ? err.message : err);
 			return null;
@@ -416,6 +440,28 @@ class RoomManager {
 			"EX",
 			this.ROOM_TTL,
 		);
+	}
+
+	/**
+	 * Changes only the given fields, atomically inside Redis. Use this instead of
+	 * getRoom + updateRoom while a game is running: a full-room write would
+	 * overwrite keystrokes other players made between the read and the write.
+	 * Returns false if the room or player is gone or requireStatus did not match.
+	 */
+	async patchRoom(roomCode: string, patch: RoomPatch): Promise<boolean> {
+		const result = await redis.eval(
+			luaScripts.getScript("patchRoom"),
+			1,
+			`${this.ROOM_PREFIX}${roomCode}`,
+			patch.playerId ?? "",
+			patch.playerFields ? JSON.stringify(patch.playerFields) : "",
+			patch.requireStatus ?? "",
+			patch.setStatus ?? "",
+			patch.addSpectator ?? "",
+			this.ROOM_TTL,
+			Date.now(),
+		);
+		return result === 1;
 	}
 
 	async addPlayer(
@@ -434,7 +480,7 @@ class RoomManager {
 			if (room.status === "PLAYING" || room.status === "COUNTDOWN") {
 				if (!Array.isArray(room.spectators)) room.spectators = [];
 				room.spectators.push(playerId);
-				await this.updateRoom(roomCode, room);
+				await this.patchRoom(roomCode, { addSpectator: playerId });
 				return { room, role: "SPECTATOR" };
 			}
 
@@ -530,14 +576,17 @@ class RoomManager {
 		newSocketId: string,
 	) {
 		return this.withLock(roomCode, async () => {
+			const applied = await this.patchRoom(roomCode, {
+				playerId,
+				playerFields: {
+					status: "ALIVE",
+					socketId: newSocketId,
+					disconnectedAt: null,
+				},
+			});
+			if (!applied) throw new Error("Player not found in room");
 			const room = await this.getRoom(roomCode);
 			if (!room) throw new Error("Room not found");
-			const player = room.players[playerId];
-			if (!player) throw new Error("Player not found in room");
-			player.status = "ALIVE";
-			player.socketId = newSocketId;
-			player.disconnectedAt = null;
-			await this.updateRoom(roomCode, room);
 			return room;
 		});
 	}
@@ -673,6 +722,10 @@ class RoomManager {
 				charIndex,
 				Date.now(),
 				this.ROOM_TTL,
+				CONSTANTS.GAME_DURATION_TIMEOUT,
+				CONSTANTS.TIMEOUT_SLACK_MS,
+				CONSTANTS.TYPING_BURST_CHARS,
+				CONSTANTS.TYPING_MAX_CHARS_PER_SEC,
 			);
 
 			if (!result) return null;

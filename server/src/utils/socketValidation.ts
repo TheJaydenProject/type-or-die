@@ -15,6 +15,17 @@ export const CONSTANTS = {
 	MAX_STRIKES: 3,
 	INITIAL_ROULETTE_ODDS: 6,
 	MIN_ROULETTE_ODDS: 2,
+	// The client starts its 20s clock when it receives the event, a network trip after
+	// the server does, so the server allows this much extra before forcing a timeout.
+	TIMEOUT_SLACK_MS: 2000,
+	// A client's own sentence_timeout is honoured only this close to the real deadline,
+	// which stops a second timeout (client + sweep) from rolling the roulette twice.
+	TIMEOUT_EARLY_TOLERANCE_MS: 2000,
+	TIMEOUT_SWEEP_INTERVAL_MS: 1000,
+	// Typing speed cap: a burst of 30 keys, refilling at 25 keys/s (~300 WPM sustained).
+	// Far above human sustained speed; keys over the cap are dropped.
+	TYPING_BURST_CHARS: 30,
+	TYPING_MAX_CHARS_PER_SEC: 25,
 } as const;
 
 const SAFE_USER_ERRORS = new Set([

@@ -7,7 +7,7 @@ import type {
 import type { Server, Socket } from "socket.io";
 import roomManager from "../services/roomManager.js";
 import { assert } from "../utils/assert.js";
-import { generateSessionToken } from "../utils/auth.js";
+import { generateSessionToken, verifySessionToken } from "../utils/auth.js";
 import {
 	cleanupDisconnectTimer,
 	disconnectTimers,
@@ -40,6 +40,18 @@ export function setupConnectionHandlers(io: TypedServer, socket: TypedSocket) {
 			validateInput("playerId", data);
 
 			const { roomCode, playerId } = data;
+
+			// Every player in a room sees every playerId, so the id alone must not be
+			// enough to take over a seat; the token issued on create/join proves it.
+			const session =
+				typeof data.token === "string" ? verifySessionToken(data.token) : null;
+			if (
+				!session ||
+				session.playerId !== playerId ||
+				session.roomCode !== roomCode
+			) {
+				return callback({ success: false, error: "Invalid session" });
+			}
 
 			const room = await roomManager.getRoom(roomCode);
 			if (!room || !room.players[playerId]) {
@@ -122,6 +134,7 @@ export function setupConnectionHandlers(io: TypedServer, socket: TypedSocket) {
 				success: true,
 				room: updatedRoom,
 				playerId: playerId,
+				token: socket.data.token,
 				role: isSpectator ? "SPECTATOR" : "PLAYER",
 			});
 		} catch (error) {
@@ -173,7 +186,13 @@ export function setupConnectionHandlers(io: TypedServer, socket: TypedSocket) {
 					player.status = "DISCONNECTED";
 					player.disconnectedAt = Date.now();
 
-					await roomManager.updateRoom(roomCode, room);
+					await roomManager.patchRoom(roomCode, {
+						playerId,
+						playerFields: {
+							status: player.status,
+							disconnectedAt: player.disconnectedAt,
+						},
+					});
 
 					socket.to(roomCode).emit("player_disconnected", {
 						playerId: playerId,

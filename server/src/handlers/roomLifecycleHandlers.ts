@@ -80,6 +80,7 @@ export function setupRoomLifecycleHandlers(
 				success: true,
 				roomCode: room.roomCode,
 				playerId: playerId,
+				token: socket.data.token,
 				role: "PLAYER",
 				room: room,
 			});
@@ -182,6 +183,7 @@ export function setupRoomLifecycleHandlers(
 			callback({
 				success: true,
 				playerId: playerId,
+				token: socket.data.token,
 				room: room,
 				role: role as "PLAYER" | "SPECTATOR",
 				sentences: room.sentences || [],
@@ -325,8 +327,10 @@ export function setupRoomLifecycleHandlers(
 				});
 			}
 
-			// Remove the kicked player's socket from the room
+			// Remove the kicked player's socket from the room. socketsLeave goes through the
+			// Redis adapter, so it works when that socket is on another replica.
 			if (targetSocketId) {
+				io.in(targetSocketId).socketsLeave(roomCode);
 				const kickedSocket = io.sockets.sockets.get(targetSocketId);
 				if (kickedSocket) {
 					kickedSocket.leave(roomCode);

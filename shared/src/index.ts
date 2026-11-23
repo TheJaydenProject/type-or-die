@@ -42,6 +42,10 @@ export interface PlayerState {
 
 	sentenceCharCount: number;
 	gracePeriodActive: boolean;
+
+	// Server-side typing-speed bucket (see atomicCharUpdate.lua)
+	typeTokens?: number;
+	typeTokensAt?: number;
 }
 
 export interface RoomState {
@@ -62,6 +66,8 @@ export interface RoomState {
 	createdAt: number;
 	gameStartedAt: number | null;
 	lastActivity: number;
+	// Identifies the current countdown so a stale timer on another replica can't start a newer game
+	countdownStartedAt?: number | null;
 
 	// End Game Data (Optional)
 	winnerId?: string;
@@ -210,6 +216,7 @@ export interface ClientToServerEvents {
 			res: ServerResponse<{
 				roomCode: string;
 				playerId: string;
+				token: string;
 				role: "PLAYER";
 				room: RoomState;
 			}>,
@@ -220,6 +227,7 @@ export interface ClientToServerEvents {
 		callback: (
 			res: ServerResponse<{
 				playerId: string;
+				token: string;
 				room: RoomState;
 				role: "PLAYER" | "SPECTATOR";
 				sentences: string[];
@@ -257,11 +265,12 @@ export interface ClientToServerEvents {
 		callback: (res: ServerResponse) => void,
 	) => void;
 	reconnect_attempt: (
-		data: { roomCode: string; playerId: string },
+		data: { roomCode: string; playerId: string; token: string },
 		callback: (
 			res: ServerResponse<{
 				room: RoomState;
 				playerId: string;
+				token: string;
 				role: "PLAYER" | "SPECTATOR";
 			}>,
 		) => void,
